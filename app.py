@@ -303,8 +303,8 @@ peak_base_val = np.max(Q_base)
 peak_mod_val = np.max(Q_mod)
 lag_base = t[np.argmax(Q_base)]
 lag_mod = t_mod[np.argmax(Q_mod)]
-runoff_base = np.trapz(Q_base, t)
-runoff_mod = np.trapz(Q_mod, t_mod)
+runoff_base = np.trapezoid(Q_base, t)
+runoff_mod = np.trapezoid(Q_mod, t_mod)
 
 peak_reduction_pct = 100 * (1 - peak_mod_val / peak_base_val)
 runoff_reduction_pct = 100 * (1 - runoff_mod / runoff_base)
