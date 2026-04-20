@@ -367,17 +367,22 @@ with left:
     st.subheader("Performance by Selected Solution")
     if not details_df.empty:
         show_df = details_df.copy()
-        show_df["runoff_red_pct"] = show_df["runoff_red_pct"].round(1)
-        show_df["peak_red_pct"] = show_df["peak_red_pct"].round(1)
-        show_df["lag_hr"] = show_df["lag_hr"].round(2)
+    
+        if "runoff_reduction_pct" in show_df.columns:
+            show_df["runoff_reduction_pct"] = show_df["runoff_reduction_pct"].round(1)
+        if "peak_reduction_pct" in show_df.columns:
+            show_df["peak_reduction_pct"] = show_df["peak_reduction_pct"].round(1)
+        if "lag_add_hr" in show_df.columns:
+            show_df["lag_add_hr"] = show_df["lag_add_hr"].round(2)
+    
         st.dataframe(
             show_df.rename(columns={
                 "solution": "Solution",
                 "family": "Family",
                 "coverage_pct": "Coverage (%)",
-                "runoff_red_pct": "Runoff red. (%)",
-                "peak_red_pct": "Peak red. (%)",
-                "lag_hr": "Lag (h)"
+                "runoff_reduction_pct": "Runoff red. (%)",
+                "peak_reduction_pct": "Peak red. (%)",
+                "lag_add_hr": "Lag (h)"
             }),
             use_container_width=True,
             hide_index=True
