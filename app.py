@@ -3,6 +3,11 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
+from hydro_model import (
+    build_baseline_hydrograph_from_event,
+    apply_nbs_to_hydrograph,
+    get_event_intensity_mm_hr,
+)
 
 st.set_page_config(page_title="Houston NBS Flood Explorer", layout="wide")
 
@@ -232,8 +237,8 @@ with top1:
     c4, c5, c6 = st.columns(3)
     c4.metric("Rain type", str(event_row["rain_type"]))
     c5.metric("Duration", f"{event_row['duration_hr']} h")
-    c6.metric("Mean intensity", f"{event_row['intensity_mm_hr']} mm/h")
-
+    intensity_val = get_event_intensity_mm_hr(event_row)
+    c6.metric("Mean intensity", f"{round(intensity_val, 2)} mm/h")
 with top2:
     st.subheader("Watershed Context")
     c1, c2, c3 = st.columns(3)
@@ -287,28 +292,26 @@ if selected_df.empty:
 # -----------------------------
 # Hydrograph computation
 # -----------------------------
-t, Q_base = build_synthetic_hydrograph(
-    float(event_row["rainfall_mm"]),
-    float(event_row["duration_hr"]),
-    float(watershed_row["impervious_pct"]),
-    float(event_row["intensity_mm_hr"])
-)
 
-total_runoff_red, total_peak_red, total_lag_hr, details_df = aggregate_nbs_effects(selected_df, event_row)
+baseline = build_baseline_hydrograph_from_event(event_row, watershed_row)
+scenario = apply_nbs_to_hydrograph(baseline, selected_df, event_row)
 
-Q_mod = Q_base * (1 - total_runoff_red) * (1 - total_peak_red)
-t_mod = t + total_lag_hr
+t = scenario["time_hr"]
+t_mod = scenario["time_mod_hr"]
+Q_base = scenario["q_base_m3s"]
+Q_mod = scenario["q_mod_m3s"]
 
-peak_base_val = np.max(Q_base)
-peak_mod_val = np.max(Q_mod)
-lag_base = t[np.argmax(Q_base)]
-lag_mod = t_mod[np.argmax(Q_mod)]
-runoff_base = np.trapezoid(Q_base, t)
-runoff_mod = np.trapezoid(Q_mod, t_mod)
+peak_base_val = scenario["peak_base_m3s"]
+peak_mod_val = scenario["peak_mod_m3s"]
+lag_base = scenario["t_peak_base_hr"]
+lag_mod = scenario["t_peak_mod_hr"]
+runoff_base = scenario["runoff_base_m3"]
+runoff_mod = scenario["runoff_mod_m3"]
 
-peak_reduction_pct = 100 * (1 - peak_mod_val / peak_base_val)
-runoff_reduction_pct = 100 * (1 - runoff_mod / runoff_base)
-lag_increase_hr = lag_mod - lag_base
+peak_reduction_pct = scenario["peak_reduction_pct"]
+runoff_reduction_pct = scenario["runoff_reduction_pct"]
+lag_increase_hr = scenario["lag_increase_hr"]
+details_df = scenario["details_df"]
 
 # -----------------------------
 # Synthetic spatial layers
@@ -357,6 +360,9 @@ with left:
     m2.metric("Runoff reduction", f"{runoff_reduction_pct:.1f}%")
     m3.metric("Lag increase", f"{lag_increase_hr:.2f} h")
     m4.metric("Flood extent reduction", f"{flood_extent_reduction_pct:.1f}%")
+    m5, m6 = st.columns(2)
+    m5.metric("Runoff coeff. (base)", f"{scenario['effective_runoff_coeff_base']:.2f}")
+    m6.metric("Runoff coeff. (with NBS)", f"{scenario['effective_runoff_coeff_mod']:.2f}")
 
     st.subheader("Performance by Selected Solution")
     if not details_df.empty:
