@@ -76,35 +76,69 @@ def aggregate_nbs_effects(selected_df, event_row):
 
     return total_runoff, total_peak, total_lag, pd.DataFrame(details)
 
-def create_watershed_grid(n=90):
+def create_watershed_grid(n=110):
     x = np.linspace(0, 1, n)
     y = np.linspace(0, 1, n)
     X, Y = np.meshgrid(x, y)
 
-    # Watershed mask: elongated urban basin
+    # Watershed mask
     mask = (((X - 0.50) / 0.42) ** 2 + ((Y - 0.52) / 0.34) ** 2) <= 1.0
 
-    # Imperviousness proxy higher near central urban corridor
-    urban_core = np.exp(-((X - 0.52) ** 2 / 0.03 + (Y - 0.55) ** 2 / 0.08))
-    side_corridor = 0.7 * np.exp(-((X - 0.35) ** 2 / 0.02 + (Y - 0.48) ** 2 / 0.12))
-    impervious = np.clip(0.15 + 0.7 * urban_core + 0.4 * side_corridor, 0, 1)
+    # Urbanized core
+    urban_core = np.exp(-((X - 0.52) ** 2 / 0.025 + (Y - 0.53) ** 2 / 0.06))
+    side_urban = 0.7 * np.exp(-((X - 0.35) ** 2 / 0.02 + (Y - 0.48) ** 2 / 0.10))
+    impervious = np.clip(0.18 + 0.75 * urban_core + 0.35 * side_urban, 0, 1)
 
-    # Bayou / drainage path
-    channel = np.abs(Y - (0.68 - 0.55 * X + 0.03 * np.sin(8 * X))) < 0.03
+    # Main outlet zone: lower-right part of basin
+    outlet_zone = np.exp(-((X - 0.78) ** 2 / 0.020 + (Y - 0.22) ** 2 / 0.020))
 
-    # Low-lying/flood-prone tendency near channel and lower-right outlet side
-    flood_sus = (
-        0.55 * np.exp(-((Y - (0.68 - 0.55 * X)) ** 2) / 0.0035)
-        + 0.30 * np.exp(-((X - 0.78) ** 2 / 0.025 + (Y - 0.30) ** 2 / 0.03))
-        + 0.25 * impervious
+    # Street network proxy
+    vertical_streets = (np.abs((X * 100) % 12 - 6) < 0.7)
+    horizontal_streets = (np.abs((Y * 100) % 11 - 5.5) < 0.7)
+    diagonal_main = np.abs(Y - (0.62 - 0.48 * X)) < 0.015
+    curved_corridor = np.abs(Y - (0.38 + 0.15 * np.sin(6 * X))) < 0.012
+
+    roads = (vertical_streets | horizontal_streets | diagonal_main | curved_corridor) & mask
+
+    # Buildings proxy = urban but not roads
+    building_blocks = (
+        (np.sin(22 * X) > 0.80) &
+        (np.sin(20 * Y) > 0.78) &
+        (~roads) &
+        mask
     )
+
+    # Low spots proxy: more likely near outlet + some local depressions
+    low_spots = (
+        0.55 * outlet_zone +
+        0.25 * np.exp(-((X - 0.60) ** 2 / 0.015 + (Y - 0.35) ** 2 / 0.020)) +
+        0.18 * np.exp(-((X - 0.30) ** 2 / 0.018 + (Y - 0.58) ** 2 / 0.025))
+    )
+
+    # Downstream tendency
+    downstream = np.clip(1.0 - Y, 0, 1)
+
+    # STREET-BASED urban flood susceptibility
+    flood_sus = (
+        0.55 * roads.astype(float) +
+        0.28 * impervious +
+        0.30 * low_spots +
+        0.20 * downstream
+    )
+
+    # Buildings should flood less than streets/open spaces
+    flood_sus[building_blocks] *= 0.35
+
     flood_sus = np.clip(flood_sus, 0, 1)
+
     flood_sus[~mask] = np.nan
     impervious[~mask] = np.nan
 
-    return X, Y, mask, impervious, channel, flood_sus
+    return X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone
 
-def allocate_nbs_spatial(selected_df, mask, impervious, channel, X, Y):
+
+def allocate_nbs_spatial(selected_df, mask, impervious, roads, X, Y, outlet_zone):
+    
     n = mask.shape[0]
     alloc = np.zeros((n, n), dtype=int)  # 0 no project, >0 category ids
 
@@ -131,18 +165,30 @@ def allocate_nbs_spatial(selected_df, mask, impervious, channel, X, Y):
         target_count = max(1, int(np.sum(mask) * coverage * 0.45))
 
         if family == "GI":
-            # Prioritize urban/impervious areas
+            # Prioritize urban and road-adjacent cells
             score = np.nan_to_num(impervious.copy(), nan=0.0)
+
             if "Green Roof" in name:
-                score *= 1.1
-            if "Infiltration Trench" in name:
-                score = score * 1.2 + 0.2 * np.nan_to_num((1 - np.abs(Y - 0.5)), nan=0)
-            if "Grassed Swale" in name or "Bioretention" in name:
-                score = score * 1.0 + 0.15 * np.nan_to_num(channel, nan=0)
+                # More central dense urban fabric
+                score = 1.15 * score + 0.10 * np.nan_to_num((1 - np.abs(X - 0.52)), nan=0)
+
+            elif "Grassed Swale" in name:
+                # Prefer corridors and roads
+                score = 0.75 * score + 0.45 * roads.astype(float)
+
+            elif "Bioretention" in name:
+                score = 0.90 * score + 0.30 * roads.astype(float)
+
+            elif "Infiltration Trench" in name:
+                score = 1.10 * score + 0.35 * roads.astype(float)
+
+            elif "Rain Barrel" in name or "Cistern" in name:
+                score = 1.00 * score + 0.15 * np.nan_to_num((1 - np.abs(Y - 0.5)), nan=0)
+
         else:
-            # Storage near channels / low zones / outlet side
-            channel_f = np.nan_to_num(channel.astype(float), nan=0.0)
-            score = 0.75 * channel_f + 0.35 * np.nan_to_num((1 - np.abs(X - 0.75)), nan=0)
+            # Storage near outlet and low urban runoff concentration zones
+            score = 0.65 * outlet_zone + 0.20 * roads.astype(float) + 0.15 * np.nan_to_num((1 - Y), nan=0)
+
 
         score[~mask] = -999
         score[alloc > 0] *= 0.7  # avoid full overlap
@@ -316,21 +362,20 @@ details_df = scenario["details_df"]
 # -----------------------------
 # Synthetic spatial layers
 # -----------------------------
-X, Y, mask, impervious, channel, flood_sus = create_watershed_grid(n=95)
-
+X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone = create_watershed_grid(n=110)
+alloc, category_names = allocate_nbs_spatial(selected_spatial, mask, impervious, roads, X, Y, outlet_zone)
 selected_spatial = selected_df.copy()
-alloc, category_names = allocate_nbs_spatial(selected_spatial, mask, impervious, channel, X, Y)
 
 # Base threshold depends on event severity
 rain_mm = float(event_row["rainfall_mm"])
 if rain_mm >= 250:
-    base_threshold = 0.28
+    base_threshold = 0.42
 elif rain_mm >= 140:
-    base_threshold = 0.38
+    base_threshold = 0.52
 elif rain_mm >= 80:
-    base_threshold = 0.48
+    base_threshold = 0.60
 else:
-    base_threshold = 0.58
+    base_threshold = 0.68
 
 before_mask, after_mask = compute_flood_masks(flood_sus, alloc, selected_spatial, base_threshold)
 
@@ -367,22 +412,17 @@ with left:
     st.subheader("Performance by Selected Solution")
     if not details_df.empty:
         show_df = details_df.copy()
-    
-        if "runoff_reduction_pct" in show_df.columns:
-            show_df["runoff_reduction_pct"] = show_df["runoff_reduction_pct"].round(1)
-        if "peak_reduction_pct" in show_df.columns:
-            show_df["peak_reduction_pct"] = show_df["peak_reduction_pct"].round(1)
-        if "lag_add_hr" in show_df.columns:
-            show_df["lag_add_hr"] = show_df["lag_add_hr"].round(2)
-    
+        show_df["runoff_red_pct"] = show_df["runoff_red_pct"].round(1)
+        show_df["peak_red_pct"] = show_df["peak_red_pct"].round(1)
+        show_df["lag_hr"] = show_df["lag_hr"].round(2)
         st.dataframe(
             show_df.rename(columns={
                 "solution": "Solution",
                 "family": "Family",
                 "coverage_pct": "Coverage (%)",
-                "runoff_reduction_pct": "Runoff red. (%)",
-                "peak_reduction_pct": "Peak red. (%)",
-                "lag_add_hr": "Lag (h)"
+                "runoff_red_pct": "Runoff red. (%)",
+                "peak_red_pct": "Peak red. (%)",
+                "lag_hr": "Lag (h)"
             }),
             use_container_width=True,
             hide_index=True
@@ -401,9 +441,10 @@ with right:
 
     fig_map, axm = plt.subplots(figsize=(7.2, 6.1))
     axm.imshow(category_map, cmap=cmap, origin="lower")
-    # overlay channel
-    ch = np.where(channel & mask, 1.0, np.nan)
-    axm.imshow(ch, cmap=ListedColormap(["#2166ac"]), origin="lower", alpha=0.8)
+
+    roads_img = np.where(roads & mask, 1.0, np.nan)
+    axm.imshow(roads_img, cmap=ListedColormap(["#4d4d4d"]), origin="lower", alpha=0.35)
+
     axm.set_xticks([])
     axm.set_yticks([])
     axm.set_title("Categorized implementation map")
@@ -412,7 +453,7 @@ with right:
     legend_lines = ["0 = untreated / baseline urban area"]
     for i, name in enumerate(category_names, start=1):
         legend_lines.append(f"{i} = {name}")
-    legend_lines.append("Blue line = bayou / main drainage corridor")
+    legend_lines.append("Dark gray = street network")
     st.caption(" | ".join(legend_lines))
 
 # -----------------------------
@@ -424,22 +465,27 @@ f1, f2 = st.columns(2)
 
 with f1:
     fig_b, axb = plt.subplots(figsize=(6.8, 5.8))
-    base_rgb = np.zeros((*before_mask.shape, 3))
-    # urban gray
-    base_rgb[..., 0] = np.where(mask, 0.82, 1.0)
-    base_rgb[..., 1] = np.where(mask, 0.82, 1.0)
-    base_rgb[..., 2] = np.where(mask, 0.82, 1.0)
-    # roads / urban corridor feel
-    roads = ((np.abs(Y - 0.55) < 0.012) | (np.abs(X - 0.52) < 0.010) | (np.abs(Y - (0.42 + 0.18*np.sin(7*X))) < 0.010)) & mask
-    base_rgb[roads] = [0.68, 0.68, 0.68]
-    # buildings-ish blocks
-    blocks = (((np.sin(20*X) > 0.82) & (np.sin(18*Y) > 0.80)) & mask & (~roads))
-    base_rgb[blocks] = [0.52, 0.52, 0.52]
+    base_rgb = np.ones((*before_mask.shape, 3))
+
+    # Background outside watershed
+    base_rgb[:] = [0.96, 0.96, 0.96]
+
+    # Urban land
+    base_rgb[mask] = [0.82, 0.82, 0.82]
+
+    # Streets
+    base_rgb[roads] = [0.63, 0.63, 0.63]
+
+    # Buildings
+    base_rgb[building_blocks] = [0.48, 0.48, 0.48]
+
     axb.imshow(base_rgb, origin="lower")
+
     flood_overlay = np.zeros((*before_mask.shape, 4))
     flood_overlay[..., 2] = 0.95
-    flood_overlay[..., 1] = 0.45
-    flood_overlay[..., 3] = np.where(before_mask, 0.62, 0.0)
+    flood_overlay[..., 1] = 0.50
+    flood_overlay[..., 3] = np.where(before_mask, 0.65, 0.0)
+
     axb.imshow(flood_overlay, origin="lower")
     axb.set_title("Before NBS")
     axb.set_xticks([])
@@ -449,10 +495,12 @@ with f1:
 with f2:
     fig_a, axa = plt.subplots(figsize=(6.8, 5.8))
     axa.imshow(base_rgb, origin="lower")
+
     flood_overlay2 = np.zeros((*after_mask.shape, 4))
     flood_overlay2[..., 2] = 0.95
-    flood_overlay2[..., 1] = 0.45
-    flood_overlay2[..., 3] = np.where(after_mask, 0.62, 0.0)
+    flood_overlay2[..., 1] = 0.50
+    flood_overlay2[..., 3] = np.where(after_mask, 0.65, 0.0)
+
     axa.imshow(flood_overlay2, origin="lower")
     axa.set_title("After NBS")
     axa.set_xticks([])
