@@ -412,22 +412,31 @@ with left:
     st.subheader("Performance by Selected Solution")
     if not details_df.empty:
         show_df = details_df.copy()
-        show_df["runoff_red_pct"] = show_df["runoff_red_pct"].round(1)
-        show_df["peak_red_pct"] = show_df["peak_red_pct"].round(1)
-        show_df["lag_hr"] = show_df["lag_hr"].round(2)
+
+        col_map = {
+            "solution": "Solution",
+            "family": "Family",
+            "coverage_pct": "Coverage (%)",
+            "runoff_reduction_pct": "Runoff red. (%)",
+            "peak_reduction_pct": "Peak red. (%)",
+            "lag_add_hr": "Lag (h)"
+        }
+
+        for col in ["runoff_reduction_pct", "peak_reduction_pct"]:
+            if col in show_df.columns:
+                show_df[col] = show_df[col].round(1)
+
+        if "lag_add_hr" in show_df.columns:
+            show_df["lag_add_hr"] = show_df["lag_add_hr"].round(2)
+
+        keep_cols = [c for c in col_map.keys() if c in show_df.columns]
+
         st.dataframe(
-            show_df.rename(columns={
-                "solution": "Solution",
-                "family": "Family",
-                "coverage_pct": "Coverage (%)",
-                "runoff_red_pct": "Runoff red. (%)",
-                "peak_red_pct": "Peak red. (%)",
-                "lag_hr": "Lag (h)"
-            }),
+            show_df[keep_cols].rename(columns=col_map),
             use_container_width=True,
             hide_index=True
         )
-
+        
 with right:
     st.subheader("Watershed Map: NBS Spatial Allocation")
     # Base raster for map
