@@ -1,2 +1,2 @@
-watershed_id,name,area_km2,impervious_pct,curve_number,initial_abstraction_mm,notes
-1,Whiteoak Bayou,246,45,85,8,Urban watershed in Houston used as baseline case study
+watershed_id,name,area_km2,impervious_pct,curve_number,initial_abstraction_mm,lulc_urban_pct,lulc_green_pct,lulc_water_pct,notes
+1,Whiteoak Bayou,246,45,85,8,61,31,8,Urban watershed in Houston used as baseline case study
