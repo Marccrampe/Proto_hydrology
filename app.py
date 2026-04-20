@@ -363,8 +363,8 @@ details_df = scenario["details_df"]
 # Synthetic spatial layers
 # -----------------------------
 X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone = create_watershed_grid(n=110)
-alloc, category_names = allocate_nbs_spatial(selected_spatial, mask, impervious, roads, X, Y, outlet_zone)
 selected_spatial = selected_df.copy()
+alloc, category_names = allocate_nbs_spatial(selected_spatial, mask, impervious, roads, X, Y, outlet_zone)
 
 # Base threshold depends on event severity
 rain_mm = float(event_row["rainfall_mm"])
