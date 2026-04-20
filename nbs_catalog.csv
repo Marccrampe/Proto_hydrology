@@ -1,0 +1,9 @@
+solution_id,family,name,max_effect_runoff,max_effect_peak,max_effect_lag_hr,notes
+1,GI,Bioretention,0.18,0.35,0.40,Distributed infiltration in urban areas
+2,GI,Grassed Swale,0.15,0.25,0.30,Street-level infiltration and conveyance
+3,GI,Green Roof,0.12,0.18,0.20,Source control on buildings
+4,GI,Rain Barrel,0.10,0.15,0.50,Small storage at building scale
+5,GI,Cistern,0.14,0.20,0.60,Larger source storage
+6,GI,Infiltration Trench,0.28,0.45,0.50,High-performance infiltration system
+7,Storage,Detention Pond,0.12,0.40,1.00,Centralized storage
+8,Storage,Floodplain Storage,0.16,0.35,1.20,Natural floodplain storage
