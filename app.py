@@ -48,56 +48,73 @@ def create_watershed_grid(n=110):
     # Watershed mask
     mask = (((X - 0.50) / 0.42) ** 2 + ((Y - 0.52) / 0.34) ** 2) <= 1.0
 
-    # Urbanized core
+    # Urban core / imperviousness
     urban_core = np.exp(-((X - 0.52) ** 2 / 0.025 + (Y - 0.53) ** 2 / 0.06))
     side_urban = 0.7 * np.exp(-((X - 0.35) ** 2 / 0.02 + (Y - 0.48) ** 2 / 0.10))
     impervious = np.clip(0.18 + 0.75 * urban_core + 0.35 * side_urban, 0, 1)
 
-    # Main outlet zone: lower-right part of basin
+    # Outlet zone (downstream / lower-right)
     outlet_zone = np.exp(-((X - 0.78) ** 2 / 0.020 + (Y - 0.22) ** 2 / 0.020))
 
-    # Street network proxy
-    vertical_streets = np.abs((X * 100) % 12 - 6) < 0.7
-    horizontal_streets = np.abs((Y * 100) % 11 - 5.5) < 0.7
-    diagonal_main = np.abs(Y - (0.62 - 0.48 * X)) < 0.015
-    curved_corridor = np.abs(Y - (0.38 + 0.15 * np.sin(6 * X))) < 0.012
+    # -----------------------------
+    # STREET NETWORK ONLY
+    # -----------------------------
+    vertical_streets = np.abs((X * 100) % 11 - 5.5) < 0.55
+    horizontal_streets = np.abs((Y * 100) % 10 - 5.0) < 0.55
+    main_road_1 = np.abs(Y - 0.42) < 0.010
+    main_road_2 = np.abs(X - 0.58) < 0.010
 
-    roads = (vertical_streets | horizontal_streets | diagonal_main | curved_corridor) & mask
+    roads = (vertical_streets | horizontal_streets | main_road_1 | main_road_2) & mask
 
-    # Buildings proxy = urban but not roads
+    # -----------------------------
+    # RIVER CORRIDOR SEPARATE
+    # -----------------------------
+    river_centerline = 0.50 + 0.035 * np.sin(10 * X) - 0.015 * np.cos(4 * X)
+    river_corridor = (np.abs(Y - river_centerline) < 0.020) & mask
+
+    # -----------------------------
+    # BUILDINGS
+    # -----------------------------
     building_blocks = (
-        (np.sin(22 * X) > 0.80) &
-        (np.sin(20 * Y) > 0.78) &
+        (np.sin(22 * X) > 0.82) &
+        (np.sin(20 * Y) > 0.80) &
         (~roads) &
+        (~river_corridor) &
         mask
     )
 
-    # Low spots
+    # -----------------------------
+    # LOW SPOTS / URBAN DEPRESSIONS
+    # -----------------------------
     low_spots = (
-        0.55 * outlet_zone +
-        0.25 * np.exp(-((X - 0.60) ** 2 / 0.015 + (Y - 0.35) ** 2 / 0.020)) +
+        0.60 * outlet_zone +
+        0.22 * np.exp(-((X - 0.62) ** 2 / 0.015 + (Y - 0.30) ** 2 / 0.020)) +
         0.18 * np.exp(-((X - 0.30) ** 2 / 0.018 + (Y - 0.58) ** 2 / 0.025))
     )
 
-    # Downstream tendency
     downstream = np.clip(1.0 - Y, 0, 1)
 
-    # Urban flood susceptibility
+    # -----------------------------
+    # URBAN FLOOD SUSCEPTIBILITY
+    # -----------------------------
     flood_sus = (
         0.55 * roads.astype(float) +
-        0.28 * impervious +
-        0.30 * low_spots +
+        0.30 * impervious +
+        0.32 * low_spots +
         0.20 * downstream
     )
 
-    # Buildings flood less than streets/open spaces
-    flood_sus[building_blocks] *= 0.35
+    # Reduce flooding in buildings
+    flood_sus[building_blocks] *= 0.30
+
+    # Strongly reduce flood inside river corridor
+    flood_sus[river_corridor] *= 0.10
 
     flood_sus = np.clip(flood_sus, 0, 1)
     flood_sus[~mask] = np.nan
     impervious[~mask] = np.nan
 
-    return X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone
+    return X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone, river_corridor
 
 
 def allocate_nbs_spatial(selected_df, mask, impervious, roads, X, Y, outlet_zone):
@@ -326,7 +343,7 @@ details_df = scenario["details_df"]
 # -----------------------------
 # Synthetic spatial layers
 # -----------------------------
-X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone = create_watershed_grid(n=110)
+X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone, river_corridor = create_watershed_grid(n=110)
 alloc, category_names = allocate_nbs_spatial(selected_df.copy(), mask, impervious, roads, X, Y, outlet_zone)
 
 rain_mm = float(event_row["rainfall_mm"])
@@ -344,6 +361,15 @@ before_mask, after_mask = compute_flood_masks(flood_sus, alloc, selected_df.copy
 flood_before_area = np.sum(before_mask)
 flood_after_area = np.sum(after_mask)
 flood_extent_reduction_pct = 100 * (1 - flood_after_area / max(flood_before_area, 1))
+
+# Clean masks to avoid flooding inside river corridor
+before_mask_clean = before_mask & (~river_corridor)
+after_mask_clean = after_mask & (~river_corridor)
+
+before_intensity = np.nan_to_num(flood_sus, nan=0.0).copy()
+after_intensity = np.nan_to_num(flood_sus, nan=0.0).copy()
+before_intensity[river_corridor] = 0.0
+after_intensity[river_corridor] = 0.0
 
 # -----------------------------
 # Outputs layout
@@ -425,7 +451,10 @@ with right:
     axm.imshow(category_map, cmap=cmap, origin="lower")
 
     roads_img = np.where(roads & mask, 1.0, np.nan)
-    axm.imshow(roads_img, cmap=ListedColormap(["#4d4d4d"]), origin="lower", alpha=0.35)
+    axm.imshow(roads_img, cmap=ListedColormap(["#4d4d4d"]), origin="lower", alpha=0.25)
+
+    river_img = np.where(river_corridor, 1.0, np.nan)
+    axm.imshow(river_img, cmap=ListedColormap(["#6baed6"]), origin="lower", alpha=0.45)
 
     axm.set_xticks([])
     axm.set_yticks([])
@@ -436,6 +465,7 @@ with right:
     for i, name in enumerate(category_names, start=1):
         legend_lines.append(f"{i} = {name}")
     legend_lines.append("Dark gray = street network")
+    legend_lines.append("Light blue = bayou corridor")
     st.caption(" | ".join(legend_lines))
 
 # -----------------------------
@@ -445,8 +475,8 @@ st.subheader("Estimated Flood Extent on Basemap")
 
 col_map1, col_map2 = st.columns(2)
 
-before_rgba = rgba_from_intensity(before_mask, np.nan_to_num(flood_sus, nan=0.0))
-after_rgba = rgba_from_intensity(after_mask, np.nan_to_num(flood_sus, nan=0.0))
+before_rgba = rgba_from_intensity(before_mask_clean, before_intensity)
+after_rgba = rgba_from_intensity(after_mask_clean, after_intensity)
 
 with col_map1:
     st.markdown("**Before NBS**")
