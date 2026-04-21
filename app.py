@@ -27,15 +27,15 @@ nbs_catalog = pd.read_csv("nbs_catalog.csv")
 # -----------------------------
 # Helpers
 # -----------------------------
-def rgba_from_intensity(mask, intensity, color=(40, 120, 255), max_alpha=120):
+def rgba_from_intensity(mask, intensity, color=(30, 110, 255), max_alpha=255):
     h, w = mask.shape
     rgba = np.zeros((h, w, 4), dtype=np.uint8)
     rgba[..., 0] = color[0]
     rgba[..., 1] = color[1]
     rgba[..., 2] = color[2]
-    alpha = np.clip(intensity * max_alpha, 0, max_alpha).astype(np.uint8)
-    alpha[~mask] = 0
-    rgba[..., 3] = alpha
+    scaled = np.clip(intensity * max_alpha, 0, max_alpha).astype(np.uint8)
+    scaled[~mask] = 0
+    rgba[..., 3] = scaled
     return rgba
 
 
@@ -58,7 +58,7 @@ def create_watershed_grid(n=110):
     river_corridor = river_corridor & mask_base
 
     # -----------------------------
-    # OUTLET ZONE (inside selected side)
+    # OUTLET ZONE
     # -----------------------------
     outlet_x = 0.75
     outlet_y = 0.36
@@ -83,7 +83,7 @@ def create_watershed_grid(n=110):
     impervious[~mask] = np.nan
 
     # -----------------------------
-    # STREET NETWORK ONLY
+    # STREET NETWORK
     # -----------------------------
     vertical_streets = np.abs((X * 100) % 11 - 5.5) < 0.55
     horizontal_streets = np.abs((Y * 100) % 10 - 5.0) < 0.55
@@ -103,7 +103,7 @@ def create_watershed_grid(n=110):
     )
 
     # -----------------------------
-    # LOW SPOTS / URBAN DEPRESSIONS
+    # LOW SPOTS / DEPRESSIONS
     # -----------------------------
     low_spots = (
         0.60 * outlet_zone
@@ -122,15 +122,20 @@ def create_watershed_grid(n=110):
     # URBAN FLOOD SUSCEPTIBILITY
     # -----------------------------
     flood_sus = (
-        0.42 * roads.astype(float)
-        + 0.22 * np.nan_to_num(impervious, nan=0.0)
-        + 0.24 * low_spots
-        + 0.32 * np.nan_to_num(slope, nan=0.0)
-        + 0.18 * flow_accum
+        0.35 * roads.astype(float)
+        + 0.18 * np.nan_to_num(impervious, nan=0.0)
+        + 0.22 * low_spots
+        + 0.30 * np.nan_to_num(slope, nan=0.0)
+        + 0.15 * flow_accum
+        + 0.40 * outlet_zone
     )
 
+    # Buildings flood less than open urban surfaces
     flood_sus[building_blocks] *= 0.30
+
+    # River should not dominate the flood mask
     flood_sus[river_corridor] *= 0.05
+
     flood_sus = np.clip(flood_sus, 0, 1)
     flood_sus[~mask] = np.nan
 
@@ -252,10 +257,11 @@ with st.sidebar:
     st.header("2) Solutions")
     st.caption("Choose one or several solutions and assign a coverage percentage.")
 
+# Tighter bounds to reduce spatial mismatch
 gauge_lat = float(gauge_row["lat"])
 gauge_lon = float(gauge_row["lon"])
-lat_pad = 0.018
-lon_pad = 0.025
+lat_pad = 0.010
+lon_pad = 0.014
 
 map_bounds = [
     [gauge_lat - lat_pad, gauge_lon - lon_pad],
@@ -437,14 +443,6 @@ with left:
             hide_index=True,
         )
 
-    with st.expander("Debug: synthetic slope toward outlet"):
-        fig_s, ax_s = plt.subplots(figsize=(6, 5))
-        ax_s.imshow(slope, cmap="terrain", origin="lower")
-        ax_s.set_xticks([])
-        ax_s.set_yticks([])
-        ax_s.set_title("Synthetic slope toward outlet")
-        st.pyplot(fig_s, use_container_width=True)
-
 with right:
     st.subheader("Watershed Map: NBS Spatial Allocation")
     category_map = np.full(mask.shape, np.nan)
@@ -499,7 +497,7 @@ after_rgba = rgba_from_intensity(after_mask_clean, after_intensity)
 
 with col_map1:
     st.markdown("**Before NBS**")
-    m_before = folium.Map(location=map_center, zoom_start=14, tiles=None)
+    m_before = folium.Map(location=map_center, zoom_start=15, tiles=None)
 
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -515,25 +513,25 @@ with col_map1:
         color="red",
         fill=True,
         fill_color="red",
-        fill_opacity=0.9,
+        fill_opacity=0.95,
         tooltip=f"Outlet gauge: {gauge_row['name']}",
     ).add_to(m_before)
 
     ImageOverlay(
         image=before_rgba,
         bounds=map_bounds,
-        opacity=0.55,
+        opacity=1.0,
         interactive=True,
         cross_origin=False,
         zindex=10,
     ).add_to(m_before)
 
     folium.LayerControl().add_to(m_before)
-    st_folium(m_before, width=650, height=500, key="before_map")
+    st_folium(m_before, width=700, height=520, key="before_map")
 
 with col_map2:
     st.markdown("**After NBS**")
-    m_after = folium.Map(location=map_center, zoom_start=14, tiles=None)
+    m_after = folium.Map(location=map_center, zoom_start=15, tiles=None)
 
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -549,21 +547,21 @@ with col_map2:
         color="red",
         fill=True,
         fill_color="red",
-        fill_opacity=0.9,
+        fill_opacity=0.95,
         tooltip=f"Outlet gauge: {gauge_row['name']}",
     ).add_to(m_after)
 
     ImageOverlay(
         image=after_rgba,
         bounds=map_bounds,
-        opacity=0.55,
+        opacity=1.0,
         interactive=True,
         cross_origin=False,
         zindex=10,
     ).add_to(m_after)
 
     folium.LayerControl().add_to(m_after)
-    st_folium(m_after, width=650, height=500, key="after_map")
+    st_folium(m_after, width=700, height=520, key="after_map")
 
 st.caption(
     "Flood maps are estimated scenario visualizations derived from a synthetic urban flood-susceptibility layer, "
