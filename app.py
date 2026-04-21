@@ -436,7 +436,7 @@ with left:
             use_container_width=True,
             hide_index=True
         )
-        
+
 with right:
     st.subheader("Watershed Map: NBS Spatial Allocation")
     # Base raster for map
@@ -479,21 +479,32 @@ with f1:
     # Background outside watershed
     base_rgb[:] = [0.96, 0.96, 0.96]
 
-    # Urban land
-    base_rgb[mask] = [0.82, 0.82, 0.82]
+    # Urban land inside watershed
+    base_rgb[mask] = [0.85, 0.85, 0.85]
+
+    # Add subtle city-like texture
+    texture = 0.02 * np.sin(40 * X) + 0.02 * np.sin(35 * Y)
+    for i in range(3):
+        base_rgb[..., i] = np.where(mask, np.clip(base_rgb[..., i] - texture, 0, 1), base_rgb[..., i])
 
     # Streets
-    base_rgb[roads] = [0.63, 0.63, 0.63]
+    base_rgb[roads] = [0.62, 0.62, 0.62]
 
     # Buildings
-    base_rgb[building_blocks] = [0.48, 0.48, 0.48]
+    base_rgb[building_blocks] = [0.45, 0.45, 0.45]
 
     axb.imshow(base_rgb, origin="lower")
 
+    # Flood overlay with variable transparency
     flood_overlay = np.zeros((*before_mask.shape, 4))
     flood_overlay[..., 2] = 0.95
     flood_overlay[..., 1] = 0.50
-    flood_overlay[..., 3] = np.where(before_mask, 0.65, 0.0)
+
+    flood_intensity = np.nan_to_num(flood_sus, nan=0.0)
+    alpha_before = np.clip(flood_intensity * 0.85, 0, 0.75)
+    alpha_before[~before_mask] = 0.0
+
+    flood_overlay[..., 3] = alpha_before
 
     axb.imshow(flood_overlay, origin="lower")
     axb.set_title("Before NBS")
@@ -508,7 +519,14 @@ with f2:
     flood_overlay2 = np.zeros((*after_mask.shape, 4))
     flood_overlay2[..., 2] = 0.95
     flood_overlay2[..., 1] = 0.50
-    flood_overlay2[..., 3] = np.where(after_mask, 0.65, 0.0)
+
+    flood_after_intensity = np.nan_to_num(flood_sus.copy(), nan=0.0)
+
+    # Optional: attenuate intensity where flood disappeared after NBS
+    alpha_after = np.clip(flood_after_intensity * 0.85, 0, 0.75)
+    alpha_after[~after_mask] = 0.0
+
+    flood_overlay2[..., 3] = alpha_after
 
     axa.imshow(flood_overlay2, origin="lower")
     axa.set_title("After NBS")
