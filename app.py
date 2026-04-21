@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import folium
+from folium.raster_layers import ImageOverlay
+from streamlit_folium import st_folium
+from PIL import Image
 from matplotlib.colors import ListedColormap
 from hydro_model import (
     build_baseline_hydrograph_from_event,
@@ -19,9 +23,41 @@ watersheds = pd.read_csv("watershed.csv")
 gauges = pd.read_csv("gauge.csv")
 nbs_catalog = pd.read_csv("nbs_catalog.csv")
 
+map_bounds = [
+    [29.73, -95.46],  # south-west
+    [29.83, -95.34],  # north-east
+]
+map_center = [29.78, -95.40]
+
+
 # -----------------------------
 # Helpers
 # -----------------------------
+
+def rgba_from_mask(mask, color=(40, 120, 255), alpha=160):
+    """
+    Convert boolean mask to RGBA image array.
+    """
+    h, w = mask.shape
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+    rgba[..., 0] = color[0]
+    rgba[..., 1] = color[1]
+    rgba[..., 2] = color[2]
+    rgba[..., 3] = np.where(mask, alpha, 0)
+    return rgba
+
+def rgba_from_intensity(mask, intensity, color=(40, 120, 255), max_alpha=180):
+    h, w = mask.shape
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+    rgba[..., 0] = color[0]
+    rgba[..., 1] = color[1]
+    rgba[..., 2] = color[2]
+
+    alpha = np.clip(intensity * max_alpha, 0, max_alpha).astype(np.uint8)
+    alpha[~mask] = 0
+    rgba[..., 3] = alpha
+    return rgba
+
 def build_synthetic_hydrograph(rainfall_mm, duration_hr, impervious_pct, intensity_mm_hr):
     t = np.linspace(0, duration_hr * 1.6, 500)
     peak_base = rainfall_mm * (0.75 + impervious_pct / 100.0) * (0.85 + intensity_mm_hr / 20.0)
@@ -470,69 +506,62 @@ with right:
 # -----------------------------
 st.subheader("Estimated Flood Extent")
 
-f1, f2 = st.columns(2)
+st.subheader("Estimated Flood Extent on Real Basemap")
 
-with f1:
-    fig_b, axb = plt.subplots(figsize=(6.8, 5.8))
-    base_rgb = np.ones((*before_mask.shape, 3))
+col_map1, col_map2 = st.columns(2)
 
-    # Background outside watershed
-    base_rgb[:] = [0.96, 0.96, 0.96]
+# Build overlays
+before_rgba = rgba_from_intensity(before_mask, np.nan_to_num(flood_sus, nan=0.0))
+after_rgba = rgba_from_intensity(after_mask, np.nan_to_num(flood_sus, nan=0.0))
 
-    # Urban land inside watershed
-    base_rgb[mask] = [0.85, 0.85, 0.85]
+with col_map1:
+    m_before = folium.Map(location=map_center, zoom_start=14, tiles=None)
 
-    # Add subtle city-like texture
-    texture = 0.02 * np.sin(40 * X) + 0.02 * np.sin(35 * Y)
-    for i in range(3):
-        base_rgb[..., i] = np.where(mask, np.clip(base_rgb[..., i] - texture, 0, 1), base_rgb[..., i])
+    # Better for streets/buildings
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri World Imagery",
+        name="Satellite",
+        overlay=False,
+        control=True,
+    ).add_to(m_before)
 
-    # Streets
-    base_rgb[roads] = [0.62, 0.62, 0.62]
+    ImageOverlay(
+        image=before_rgba,
+        bounds=map_bounds,
+        opacity=0.75,
+        interactive=True,
+        cross_origin=False,
+        zindex=10,
+    ).add_to(m_before)
 
-    # Buildings
-    base_rgb[building_blocks] = [0.45, 0.45, 0.45]
+    folium.LayerControl().add_to(m_before)
+    st.markdown("**Before NBS**")
+    st_folium(m_before, width=650, height=500)
 
-    axb.imshow(base_rgb, origin="lower")
+with col_map2:
+    m_after = folium.Map(location=map_center, zoom_start=14, tiles=None)
 
-    # Flood overlay with variable transparency
-    flood_overlay = np.zeros((*before_mask.shape, 4))
-    flood_overlay[..., 2] = 0.95
-    flood_overlay[..., 1] = 0.50
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri World Imagery",
+        name="Satellite",
+        overlay=False,
+        control=True,
+    ).add_to(m_after)
 
-    flood_intensity = np.nan_to_num(flood_sus, nan=0.0)
-    alpha_before = np.clip(flood_intensity * 0.85, 0, 0.75)
-    alpha_before[~before_mask] = 0.0
+    ImageOverlay(
+        image=after_rgba,
+        bounds=map_bounds,
+        opacity=0.75,
+        interactive=True,
+        cross_origin=False,
+        zindex=10,
+    ).add_to(m_after)
 
-    flood_overlay[..., 3] = alpha_before
-
-    axb.imshow(flood_overlay, origin="lower")
-    axb.set_title("Before NBS")
-    axb.set_xticks([])
-    axb.set_yticks([])
-    st.pyplot(fig_b, use_container_width=True)
-
-with f2:
-    fig_a, axa = plt.subplots(figsize=(6.8, 5.8))
-    axa.imshow(base_rgb, origin="lower")
-
-    flood_overlay2 = np.zeros((*after_mask.shape, 4))
-    flood_overlay2[..., 2] = 0.95
-    flood_overlay2[..., 1] = 0.50
-
-    flood_after_intensity = np.nan_to_num(flood_sus.copy(), nan=0.0)
-
-    # Optional: attenuate intensity where flood disappeared after NBS
-    alpha_after = np.clip(flood_after_intensity * 0.85, 0, 0.75)
-    alpha_after[~after_mask] = 0.0
-
-    flood_overlay2[..., 3] = alpha_after
-
-    axa.imshow(flood_overlay2, origin="lower")
-    axa.set_title("After NBS")
-    axa.set_xticks([])
-    axa.set_yticks([])
-    st.pyplot(fig_a, use_container_width=True)
+    folium.LayerControl().add_to(m_after)
+    st.markdown("**After NBS**")
+    st_folium(m_after, width=650, height=500)
 
 st.caption(
     "Flood maps are estimated scenario visualizations derived from a synthetic flood-susceptibility layer and literature-based NBS performance effects. "
