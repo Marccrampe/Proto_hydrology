@@ -33,7 +33,6 @@ def rgba_from_intensity(mask, intensity, color=(40, 120, 255), max_alpha=120):
     rgba[..., 0] = color[0]
     rgba[..., 1] = color[1]
     rgba[..., 2] = color[2]
-
     alpha = np.clip(intensity * max_alpha, 0, max_alpha).astype(np.uint8)
     alpha[~mask] = 0
     rgba[..., 3] = alpha
@@ -45,82 +44,102 @@ def create_watershed_grid(n=110):
     y = np.linspace(0, 1, n)
     X, Y = np.meshgrid(x, y)
 
-    # Watershed mask
-    mask = (((X - 0.50) / 0.42) ** 2 + ((Y - 0.52) / 0.34) ** 2) <= 1.0
+    # -----------------------------
+    # RIVER CENTERLINE
+    # -----------------------------
+    river_centerline = 0.50 + 0.035 * np.sin(10 * X) - 0.015 * np.cos(4 * X)
+    river_corridor = np.abs(Y - river_centerline) < 0.020
 
-    # Urban core / imperviousness
-    urban_core = np.exp(-((X - 0.52) ** 2 / 0.025 + (Y - 0.53) ** 2 / 0.06))
-    side_urban = 0.7 * np.exp(-((X - 0.35) ** 2 / 0.02 + (Y - 0.48) ** 2 / 0.10))
+    # -----------------------------
+    # WATERSHED MASK: ONE SIDE ONLY
+    # -----------------------------
+    mask_base = (((X - 0.50) / 0.42) ** 2 + ((Y - 0.52) / 0.34) ** 2) <= 1.0
+    mask = mask_base & (Y > river_centerline)
+    river_corridor = river_corridor & mask_base
+
+    # -----------------------------
+    # OUTLET ZONE (inside selected side)
+    # -----------------------------
+    outlet_x = 0.75
+    outlet_y = 0.36
+    outlet_zone = np.exp(-((X - outlet_x) ** 2 / 0.020 + (Y - outlet_y) ** 2 / 0.020))
+    outlet_zone[~mask] = 0.0
+
+    # -----------------------------
+    # SYNTHETIC SLOPE TOWARD OUTLET
+    # -----------------------------
+    dist_to_outlet = np.sqrt((X - outlet_x) ** 2 + (Y - outlet_y) ** 2)
+    dist_norm = dist_to_outlet / np.nanmax(dist_to_outlet)
+    slope = 1.0 - dist_norm
+    slope = np.clip(slope, 0, 1) ** 1.2
+    slope[~mask] = np.nan
+
+    # -----------------------------
+    # URBAN CORE / IMPERVIOUSNESS
+    # -----------------------------
+    urban_core = np.exp(-((X - 0.52) ** 2 / 0.025 + (Y - 0.60) ** 2 / 0.05))
+    side_urban = 0.7 * np.exp(-((X - 0.35) ** 2 / 0.02 + (Y - 0.58) ** 2 / 0.08))
     impervious = np.clip(0.18 + 0.75 * urban_core + 0.35 * side_urban, 0, 1)
-
-    # Outlet zone (downstream / lower-right)
-    outlet_zone = np.exp(-((X - 0.78) ** 2 / 0.020 + (Y - 0.22) ** 2 / 0.020))
+    impervious[~mask] = np.nan
 
     # -----------------------------
     # STREET NETWORK ONLY
     # -----------------------------
     vertical_streets = np.abs((X * 100) % 11 - 5.5) < 0.55
     horizontal_streets = np.abs((Y * 100) % 10 - 5.0) < 0.55
-    main_road_1 = np.abs(Y - 0.42) < 0.010
+    main_road_1 = np.abs(Y - 0.46) < 0.010
     main_road_2 = np.abs(X - 0.58) < 0.010
-
     roads = (vertical_streets | horizontal_streets | main_road_1 | main_road_2) & mask
-
-    # -----------------------------
-    # RIVER CORRIDOR SEPARATE
-    # -----------------------------
-    river_centerline = 0.50 + 0.035 * np.sin(10 * X) - 0.015 * np.cos(4 * X)
-    river_corridor = (np.abs(Y - river_centerline) < 0.020) & mask
 
     # -----------------------------
     # BUILDINGS
     # -----------------------------
     building_blocks = (
-        (np.sin(22 * X) > 0.82) &
-        (np.sin(20 * Y) > 0.80) &
-        (~roads) &
-        (~river_corridor) &
-        mask
+        (np.sin(22 * X) > 0.82)
+        & (np.sin(20 * Y) > 0.80)
+        & (~roads)
+        & (~river_corridor)
+        & mask
     )
 
     # -----------------------------
     # LOW SPOTS / URBAN DEPRESSIONS
     # -----------------------------
     low_spots = (
-        0.60 * outlet_zone +
-        0.22 * np.exp(-((X - 0.62) ** 2 / 0.015 + (Y - 0.30) ** 2 / 0.020)) +
-        0.18 * np.exp(-((X - 0.30) ** 2 / 0.018 + (Y - 0.58) ** 2 / 0.025))
+        0.60 * outlet_zone
+        + 0.22 * np.exp(-((X - 0.62) ** 2 / 0.015 + (Y - 0.44) ** 2 / 0.020))
+        + 0.18 * np.exp(-((X - 0.30) ** 2 / 0.018 + (Y - 0.68) ** 2 / 0.025))
     )
+    low_spots[~mask] = 0.0
 
-    downstream = np.clip(1.0 - Y, 0, 1)
+    # -----------------------------
+    # FLOW ACCUMULATION LIGHT
+    # -----------------------------
+    flow_accum = slope * np.nan_to_num(impervious, nan=0.0)
+    flow_accum = np.clip(flow_accum, 0, 1)
 
     # -----------------------------
     # URBAN FLOOD SUSCEPTIBILITY
     # -----------------------------
     flood_sus = (
-        0.55 * roads.astype(float) +
-        0.30 * impervious +
-        0.32 * low_spots +
-        0.20 * downstream
+        0.42 * roads.astype(float)
+        + 0.22 * np.nan_to_num(impervious, nan=0.0)
+        + 0.24 * low_spots
+        + 0.32 * np.nan_to_num(slope, nan=0.0)
+        + 0.18 * flow_accum
     )
 
-    # Reduce flooding in buildings
     flood_sus[building_blocks] *= 0.30
-
-    # Strongly reduce flood inside river corridor
-    flood_sus[river_corridor] *= 0.10
-
+    flood_sus[river_corridor] *= 0.05
     flood_sus = np.clip(flood_sus, 0, 1)
     flood_sus[~mask] = np.nan
-    impervious[~mask] = np.nan
 
-    return X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone, river_corridor
+    return X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone, river_corridor, slope
 
 
 def allocate_nbs_spatial(selected_df, mask, impervious, roads, X, Y, outlet_zone):
     n = mask.shape[0]
     alloc = np.zeros((n, n), dtype=int)
-
     category_names = []
     current_id = 1
 
@@ -134,7 +153,6 @@ def allocate_nbs_spatial(selected_df, mask, impervious, roads, X, Y, outlet_zone
         category_names.append(name)
         cat_id = current_id
         current_id += 1
-
         target_count = max(1, int(np.sum(mask) * coverage * 0.45))
 
         if family == "GI":
@@ -142,16 +160,12 @@ def allocate_nbs_spatial(selected_df, mask, impervious, roads, X, Y, outlet_zone
 
             if "Green Roof" in name:
                 score = 1.15 * score + 0.10 * np.nan_to_num((1 - np.abs(X - 0.52)), nan=0)
-
             elif "Grassed Swale" in name:
                 score = 0.75 * score + 0.45 * roads.astype(float)
-
             elif "Bioretention" in name:
                 score = 0.90 * score + 0.30 * roads.astype(float)
-
             elif "Infiltration Trench" in name:
                 score = 1.10 * score + 0.35 * roads.astype(float)
-
             elif "Rain Barrel" in name or "Cistern" in name:
                 score = 1.00 * score + 0.15 * np.nan_to_num((1 - np.abs(Y - 0.5)), nan=0)
 
@@ -209,7 +223,6 @@ def compute_flood_masks(flood_sus, alloc, selected_df, base_threshold):
     reduction = np.clip(reduction, 0, 0.55)
 
     flood_after = flood_before * (1 - reduction)
-
     before_mask = flood_before >= base_threshold
     after_mask = flood_after >= base_threshold
 
@@ -239,7 +252,6 @@ with st.sidebar:
     st.header("2) Solutions")
     st.caption("Choose one or several solutions and assign a coverage percentage.")
 
-# Dynamic map bounds centered on gauge
 gauge_lat = float(gauge_row["lat"])
 gauge_lon = float(gauge_row["lon"])
 lat_pad = 0.018
@@ -343,7 +355,7 @@ details_df = scenario["details_df"]
 # -----------------------------
 # Synthetic spatial layers
 # -----------------------------
-X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone, river_corridor = create_watershed_grid(n=110)
+X, Y, mask, impervious, roads, building_blocks, flood_sus, outlet_zone, river_corridor, slope = create_watershed_grid(n=110)
 alloc, category_names = allocate_nbs_spatial(selected_df.copy(), mask, impervious, roads, X, Y, outlet_zone)
 
 rain_mm = float(event_row["rainfall_mm"])
@@ -362,7 +374,6 @@ flood_before_area = np.sum(before_mask)
 flood_after_area = np.sum(after_mask)
 flood_extent_reduction_pct = 100 * (1 - flood_after_area / max(flood_before_area, 1))
 
-# Clean masks to avoid flooding inside river corridor
 before_mask_clean = before_mask & (~river_corridor)
 after_mask_clean = after_mask & (~river_corridor)
 
@@ -425,6 +436,14 @@ with left:
             use_container_width=True,
             hide_index=True,
         )
+
+    with st.expander("Debug: synthetic slope toward outlet"):
+        fig_s, ax_s = plt.subplots(figsize=(6, 5))
+        ax_s.imshow(slope, cmap="terrain", origin="lower")
+        ax_s.set_xticks([])
+        ax_s.set_yticks([])
+        ax_s.set_title("Synthetic slope toward outlet")
+        st.pyplot(fig_s, use_container_width=True)
 
 with right:
     st.subheader("Watershed Map: NBS Spatial Allocation")
