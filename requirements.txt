@@ -1,6 +1,11 @@
-streamlit>=1.30
-pandas>=2.0
-numpy>=1.24
-matplotlib>=3.7
-streamlit-folium==0.15.0
-folium==0.14.0
+streamlit
+pandas
+numpy
+matplotlib
+folium
+streamlit-folium
+Pillow
+osmnx
+geopandas
+rasterio
+shapely
