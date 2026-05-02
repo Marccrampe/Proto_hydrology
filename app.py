@@ -8,7 +8,6 @@ from streamlit_folium import st_folium
 from matplotlib.colors import ListedColormap
 
 import osmnx as ox
-import geopandas as gpd
 from shapely.geometry import box
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds
@@ -22,24 +21,19 @@ from hydro_model import (
 st.set_page_config(page_title="Houston NBS Flood Explorer", layout="wide")
 
 
-# ============================================================
-# DATA
-# ============================================================
 @st.cache_data
 def load_tabular_data():
-    events = pd.read_csv("events.csv")
-    watersheds = pd.read_csv("watershed.csv")
-    gauges = pd.read_csv("gauge.csv")
-    nbs_catalog = pd.read_csv("nbs_catalog.csv")
-    return events, watersheds, gauges, nbs_catalog
+    return (
+        pd.read_csv("events.csv"),
+        pd.read_csv("watershed.csv"),
+        pd.read_csv("gauge.csv"),
+        pd.read_csv("nbs_catalog.csv"),
+    )
 
 
 events, watersheds, gauges, nbs_catalog = load_tabular_data()
 
 
-# ============================================================
-# HELPERS
-# ============================================================
 def rgba_from_intensity(mask, intensity, color=(30, 110, 255), max_alpha=255):
     h, w = mask.shape
     rgba = np.zeros((h, w, 4), dtype=np.uint8)
@@ -69,33 +63,33 @@ def smooth2d(arr, n_iter=2):
     return out
 
 
-@st.cache_resource(show_spinner=False)
+def features_from_bbox_compat(north, south, east, west, tags):
+    """
+    Compatible wrapper for OSMnx v1/v2.
+    OSMnx v2 expects bbox=(west, south, east, north).
+    """
+    bbox = (west, south, east, north)
+    try:
+        return ox.features_from_bbox(bbox, tags=tags)
+    except TypeError:
+        return ox.features_from_bbox(north, south, east, west, tags=tags)
+
+
+@st.cache_data(show_spinner=False)
 def load_osm_layers(north, south, east, west):
     bbox_poly = box(west, south, east, north)
 
-    # Roads
-    roads = ox.features_from_bbox(
-        north, south, east, west,
-        tags={"highway": True}
-    )
+    roads = features_from_bbox_compat(north, south, east, west, {"highway": True})
     roads = roads[roads.geometry.type.isin(["LineString", "MultiLineString"])].copy()
     roads = roads.to_crs(4326)
     roads = roads[roads.intersects(bbox_poly)]
 
-    # Buildings
-    buildings = ox.features_from_bbox(
-        north, south, east, west,
-        tags={"building": True}
-    )
+    buildings = features_from_bbox_compat(north, south, east, west, {"building": True})
     buildings = buildings[buildings.geometry.type.isin(["Polygon", "MultiPolygon"])].copy()
     buildings = buildings.to_crs(4326)
     buildings = buildings[buildings.intersects(bbox_poly)]
 
-    # Waterways
-    water = ox.features_from_bbox(
-        north, south, east, west,
-        tags={"waterway": True}
-    )
+    water = features_from_bbox_compat(north, south, east, west, {"waterway": True})
     water = water[water.geometry.type.isin(["LineString", "MultiLineString", "Polygon", "MultiPolygon"])].copy()
     water = water.to_crs(4326)
     water = water[water.intersects(bbox_poly)]
@@ -114,7 +108,7 @@ def rasterize_gdf(gdf, bounds, out_shape, all_touched=True, default_value=1):
     if not shapes:
         return np.zeros(out_shape, dtype=np.uint8)
 
-    arr = rasterize(
+    return rasterize(
         shapes,
         out_shape=out_shape,
         transform=transform,
@@ -122,20 +116,13 @@ def rasterize_gdf(gdf, bounds, out_shape, all_touched=True, default_value=1):
         all_touched=all_touched,
         dtype="uint8",
     )
-    return arr
 
 
 def derive_one_side_watershed_from_river(river_arr):
-    """
-    Build a one-sided watershed mask from a rasterized river.
-    Keep the SOUTH side of the river (rows below the river line).
-    """
     h, w = river_arr.shape
     mask = np.zeros((h, w), dtype=bool)
 
-    river_cols = []
-    river_rows = []
-
+    river_cols, river_rows = [], []
     for c in range(w):
         rows = np.where(river_arr[:, c] > 0)[0]
         if len(rows) > 0:
@@ -143,19 +130,16 @@ def derive_one_side_watershed_from_river(river_arr):
             river_rows.append(np.mean(rows))
 
     if len(river_cols) < 3:
-        # fallback: lower part of domain
         mask[h // 3 :, :] = True
         return mask
 
     river_cols = np.array(river_cols)
     river_rows = np.array(river_rows)
-
-    full_cols = np.arange(w)
-    interp_rows = np.interp(full_cols, river_cols, river_rows)
+    interp_rows = np.interp(np.arange(w), river_cols, river_rows)
 
     for c in range(w):
         r0 = int(np.clip(interp_rows[c], 0, h - 1))
-        mask[r0 + 1 :, c] = True  # south side only
+        mask[r0 + 1 :, c] = True
 
     return mask
 
@@ -165,42 +149,34 @@ def build_real_spatial_layers(gauge_lat, gauge_lon, lat_pad, lon_pad, n=280):
     south = gauge_lat - lat_pad
     east = gauge_lon + lon_pad
     west = gauge_lon - lon_pad
-
     bounds = (west, south, east, north)
 
-    # grids in geographic coordinates
     lon = np.linspace(west, east, n)
-    lat = np.linspace(north, south, n)  # row 0 = north
+    lat = np.linspace(north, south, n)
     Lon, Lat = np.meshgrid(lon, lat)
 
     roads_gdf, buildings_gdf, water_gdf = load_osm_layers(north, south, east, west)
 
-    roads = rasterize_gdf(roads_gdf, bounds, (n, n), all_touched=True, default_value=1).astype(bool)
-    buildings = rasterize_gdf(buildings_gdf, bounds, (n, n), all_touched=True, default_value=1).astype(bool)
-    river = rasterize_gdf(water_gdf, bounds, (n, n), all_touched=True, default_value=1).astype(bool)
+    roads = rasterize_gdf(roads_gdf, bounds, (n, n), all_touched=True).astype(bool)
+    buildings = rasterize_gdf(buildings_gdf, bounds, (n, n), all_touched=True).astype(bool)
+    river = rasterize_gdf(water_gdf, bounds, (n, n), all_touched=True).astype(bool)
 
-    # one-sided mask
     mask = derive_one_side_watershed_from_river(river)
-
-    # if river extraction weak, keep local half near outlet
     if mask.sum() < 0.12 * n * n:
         mask = np.zeros((n, n), dtype=bool)
         mask[n // 3 :, :] = True
 
-    # outlet zone around gauge
     dlon = (Lon - gauge_lon) / max(lon_pad, 1e-6)
     dlat = (Lat - gauge_lat) / max(lat_pad, 1e-6)
+
     outlet_zone = np.exp(-(dlon**2 / 0.08 + dlat**2 / 0.08))
     outlet_zone[~mask] = 0.0
 
-    # synthetic slope toward gauge / outlet
     dist = np.sqrt(dlon**2 + dlat**2)
     dist = dist / np.nanmax(dist)
-    slope = 1.0 - dist
-    slope = np.clip(slope, 0, 1) ** 1.3
+    slope = np.clip(1.0 - dist, 0, 1) ** 1.3
     slope[~mask] = np.nan
 
-    # impervious proxy from real layers
     roads_f = roads.astype(float)
     buildings_f = buildings.astype(float)
     river_f = river.astype(float)
@@ -209,12 +185,10 @@ def build_real_spatial_layers(gauge_lat, gauge_lon, lat_pad, lon_pad, n=280):
     impervious = np.clip(impervious, 0, 1)
     impervious[~mask] = np.nan
 
-    # low spots / accumulation
     low_spots = 0.55 * outlet_zone + 0.18 * smooth2d(river_f, 4) + 0.18 * np.nan_to_num(slope, nan=0.0)
     low_spots[~mask] = 0.0
 
-    flow_accum = np.nan_to_num(slope, nan=0.0) * np.nan_to_num(impervious, nan=0.0)
-    flow_accum = np.clip(flow_accum, 0, 1)
+    flow_accum = np.clip(np.nan_to_num(slope, nan=0.0) * np.nan_to_num(impervious, nan=0.0), 0, 1)
 
     flood_sus = (
         0.42 * roads_f
@@ -225,15 +199,12 @@ def build_real_spatial_layers(gauge_lat, gauge_lon, lat_pad, lon_pad, n=280):
         + 0.40 * outlet_zone
     )
 
-    # reduce flooding in buildings and in the river itself
     flood_sus[buildings] *= 0.30
     flood_sus[river] *= 0.08
     flood_sus = np.clip(flood_sus, 0, 1)
     flood_sus[~mask] = np.nan
 
     return {
-        "Lon": Lon,
-        "Lat": Lat,
         "mask": mask,
         "roads": roads,
         "buildings": buildings,
@@ -242,10 +213,9 @@ def build_real_spatial_layers(gauge_lat, gauge_lon, lat_pad, lon_pad, n=280):
         "outlet_zone": outlet_zone,
         "slope": slope,
         "flood_sus": flood_sus,
-        "bounds": bounds,
-        "roads_gdf": roads_gdf,
-        "buildings_gdf": buildings_gdf,
-        "water_gdf": water_gdf,
+        "roads_count": len(roads_gdf),
+        "buildings_count": len(buildings_gdf),
+        "water_count": len(water_gdf),
     }
 
 
@@ -256,8 +226,8 @@ def create_synthetic_spatial_layers(n=220):
 
     river_centerline = 0.45 + 0.03 * np.sin(8 * X)
     river = np.abs(Y - river_centerline) < 0.018
-
     mask = Y > river_centerline
+
     roads = (
         (np.abs((X * 100) % 12 - 6) < 0.5)
         | (np.abs((Y * 100) % 11 - 5.5) < 0.5)
@@ -272,8 +242,7 @@ def create_synthetic_spatial_layers(n=220):
     )
 
     outlet_zone = np.exp(-((X - 0.72) ** 2 / 0.03 + (Y - 0.65) ** 2 / 0.03))
-    slope = 1 - np.sqrt((X - 0.72) ** 2 + (Y - 0.65) ** 2)
-    slope = np.clip(slope, 0, 1)
+    slope = np.clip(1 - np.sqrt((X - 0.72) ** 2 + (Y - 0.65) ** 2), 0, 1)
     slope[~mask] = np.nan
 
     impervious = 0.55 * smooth2d(roads.astype(float), 2) + 0.65 * smooth2d(buildings.astype(float), 2)
@@ -297,8 +266,6 @@ def create_synthetic_spatial_layers(n=220):
     flood_sus[~mask] = np.nan
 
     return {
-        "Lon": X,
-        "Lat": Y,
         "mask": mask,
         "roads": roads,
         "buildings": buildings,
@@ -307,7 +274,9 @@ def create_synthetic_spatial_layers(n=220):
         "outlet_zone": outlet_zone,
         "slope": slope,
         "flood_sus": flood_sus,
-        "bounds": (0, 0, 1, 1),
+        "roads_count": 0,
+        "buildings_count": 0,
+        "water_count": 0,
     }
 
 
@@ -327,12 +296,10 @@ def allocate_nbs_spatial_real(selected_df, mask, roads, buildings, impervious, o
         category_names.append(name)
         cat_id = current_id
         current_id += 1
-
         target_count = max(1, int(np.sum(mask) * coverage * 0.18))
 
         if family == "GI":
             score = np.nan_to_num(impervious.copy(), nan=0.0)
-
             if "Green Roof" in name:
                 score = 0.85 * score + 0.75 * buildings.astype(float)
             elif "Grassed Swale" in name:
@@ -348,7 +315,6 @@ def allocate_nbs_spatial_real(selected_df, mask, roads, buildings, impervious, o
 
         score[~mask] = -999
         score[alloc > 0] *= 0.7
-
         flat_idx = np.argsort(score.ravel())[::-1]
         chosen = 0
 
@@ -364,8 +330,6 @@ def allocate_nbs_spatial_real(selected_df, mask, roads, buildings, impervious, o
                 if np.all(patch == 0):
                     alloc[rr0:rr1, cc0:cc1] = cat_id
                     chosen += patch.size
-                else:
-                    continue
             else:
                 if alloc[r, c] == 0:
                     alloc[r, c] = cat_id
@@ -384,26 +348,18 @@ def compute_flood_masks(flood_sus, alloc, selected_df, base_threshold):
     for idx, row in selected_df.iterrows():
         coverage = float(row["coverage_pct"]) / 100.0
         family = row["family"]
-
-        if family == "GI":
-            local_red = 0.10 + 0.20 * coverage
-        else:
-            local_red = 0.14 + 0.22 * coverage
-
-        cat_id = idx + 1
-        reduction += (alloc == cat_id) * local_red
+        local_red = (0.10 + 0.20 * coverage) if family == "GI" else (0.14 + 0.22 * coverage)
+        reduction += (alloc == (idx + 1)) * local_red
 
     reduction += 0.04 * (alloc > 0)
     reduction = np.clip(reduction, 0, 0.55)
 
     flood_after = flood_before * (1 - reduction)
-    before_mask = flood_before >= base_threshold
-    after_mask = flood_after >= base_threshold
-    return before_mask, after_mask
+    return flood_before >= base_threshold, flood_after >= base_threshold
 
 
 # ============================================================
-# TITLE
+# APP
 # ============================================================
 st.title("Houston Nature-Based Solutions Flood Explorer")
 st.caption(
@@ -411,14 +367,10 @@ st.caption(
     "real street/building-based spatial layers, and estimated urban flood extent."
 )
 
-# ============================================================
-# EVENT / WATERSHED SELECTION
-# ============================================================
 with st.sidebar:
     st.header("1) Event")
     selected_event_name = st.selectbox("Select event", events["name"].tolist())
     event_row = events.loc[events["name"] == selected_event_name].iloc[0]
-
     watershed_row = watersheds.loc[watersheds["watershed_id"] == event_row["watershed_id"]].iloc[0]
     gauge_row = gauges.loc[gauges["gauge_id"] == event_row["gauge_id"]].iloc[0]
 
@@ -427,19 +379,11 @@ with st.sidebar:
 
 gauge_lat = float(gauge_row["lat"])
 gauge_lon = float(gauge_row["lon"])
-
 lat_pad = 0.010
 lon_pad = 0.014
-
-map_bounds = [
-    [gauge_lat - lat_pad, gauge_lon - lon_pad],
-    [gauge_lat + lat_pad, gauge_lon + lon_pad],
-]
+map_bounds = [[gauge_lat - lat_pad, gauge_lon - lon_pad], [gauge_lat + lat_pad, gauge_lon + lon_pad]]
 map_center = [gauge_lat, gauge_lon]
 
-# ============================================================
-# EVENT / WATERSHED INFO
-# ============================================================
 top1, top2 = st.columns([1.2, 1.0])
 
 with top1:
@@ -452,8 +396,7 @@ with top1:
     c4, c5, c6 = st.columns(3)
     c4.metric("Rain type", str(event_row.get("rain_type", "N/A")))
     c5.metric("Duration", f"{event_row.get('duration_hr', 'N/A')} h")
-    intensity_val = get_event_intensity_mm_hr(event_row)
-    c6.metric("Mean intensity", f"{round(intensity_val, 2)} mm/h")
+    c6.metric("Mean intensity", f"{round(get_event_intensity_mm_hr(event_row), 2)} mm/h")
 
 with top2:
     st.subheader("Watershed Context")
@@ -468,13 +411,11 @@ with top2:
     c6.metric("Urban LULC", f"{watershed_row.get('lulc_urban_pct', 'N/A')}%")
 
     st.caption(
-        f"Gauge: {gauge_row.get('name', 'N/A')} | Green LULC: {watershed_row.get('lulc_green_pct', 'N/A')}% | "
+        f"Gauge: {gauge_row.get('name', 'N/A')} | "
+        f"Green LULC: {watershed_row.get('lulc_green_pct', 'N/A')}% | "
         f"Water/wet areas: {watershed_row.get('lulc_water_pct', 'N/A')}%"
     )
 
-# ============================================================
-# NBS SELECTOR
-# ============================================================
 st.subheader("Nature-Based Solutions Selection")
 
 editor_df = nbs_catalog.copy()
@@ -504,9 +445,6 @@ if selected_df.empty:
     st.warning("Select at least one solution and assign a coverage percentage to generate the scenario.")
     st.stop()
 
-# ============================================================
-# HYDROGRAPH
-# ============================================================
 baseline = build_baseline_hydrograph_from_event(event_row, watershed_row)
 scenario = apply_nbs_to_hydrograph(baseline, selected_df, event_row)
 
@@ -514,16 +452,11 @@ t = scenario["time_hr"]
 t_mod = scenario["time_mod_hr"]
 Q_base = scenario["q_base_m3s"]
 Q_mod = scenario["q_mod_m3s"]
-
-peak_reduction_pct = scenario["peak_reduction_pct"]
-runoff_reduction_pct = scenario["runoff_reduction_pct"]
-lag_increase_hr = scenario["lag_increase_hr"]
 details_df = scenario["details_df"]
 
-# ============================================================
-# SPATIAL LAYERS
-# ============================================================
 use_fallback = False
+spatial_error = None
+
 try:
     spatial = build_real_spatial_layers(
         gauge_lat=gauge_lat,
@@ -532,7 +465,8 @@ try:
         lon_pad=lon_pad,
         n=280,
     )
-except Exception:
+except Exception as e:
+    spatial_error = str(e)
     spatial = create_synthetic_spatial_layers(n=220)
     use_fallback = True
 
@@ -546,12 +480,7 @@ slope = spatial["slope"]
 flood_sus = spatial["flood_sus"]
 
 alloc, category_names = allocate_nbs_spatial_real(
-    selected_df.copy(),
-    mask=mask,
-    roads=roads,
-    buildings=buildings,
-    impervious=impervious,
-    outlet_zone=outlet_zone,
+    selected_df.copy(), mask, roads, buildings, impervious, outlet_zone
 )
 
 rain_mm = float(event_row["rainfall_mm"])
@@ -565,10 +494,7 @@ else:
     base_threshold = 0.68
 
 before_mask, after_mask = compute_flood_masks(flood_sus, alloc, selected_df.copy(), base_threshold)
-
-flood_before_area = np.sum(before_mask)
-flood_after_area = np.sum(after_mask)
-flood_extent_reduction_pct = 100 * (1 - flood_after_area / max(flood_before_area, 1))
+flood_extent_reduction_pct = 100 * (1 - np.sum(after_mask) / max(np.sum(before_mask), 1))
 
 before_mask_clean = before_mask & (~river)
 after_mask_clean = after_mask & (~river)
@@ -578,9 +504,6 @@ after_intensity = np.nan_to_num(flood_sus, nan=0.0).copy()
 before_intensity[river] = 0.0
 after_intensity[river] = 0.0
 
-# ============================================================
-# OUTPUTS
-# ============================================================
 left, right = st.columns([1.1, 1.0])
 
 with left:
@@ -596,9 +519,9 @@ with left:
     st.pyplot(fig, use_container_width=True)
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Peak reduction", f"{peak_reduction_pct:.1f}%")
-    m2.metric("Runoff reduction", f"{runoff_reduction_pct:.1f}%")
-    m3.metric("Lag increase", f"{lag_increase_hr:.2f} h")
+    m1.metric("Peak reduction", f"{scenario['peak_reduction_pct']:.1f}%")
+    m2.metric("Runoff reduction", f"{scenario['runoff_reduction_pct']:.1f}%")
+    m3.metric("Lag increase", f"{scenario['lag_increase_hr']:.2f} h")
     m4.metric("Flood extent reduction", f"{flood_extent_reduction_pct:.1f}%")
 
     m5, m6 = st.columns(2)
@@ -616,23 +539,26 @@ with left:
             "peak_reduction_pct": "Peak red. (%)",
             "lag_add_hr": "Lag (h)",
         }
-
         for col in ["runoff_reduction_pct", "peak_reduction_pct"]:
             if col in show_df.columns:
                 show_df[col] = show_df[col].round(1)
-
         if "lag_add_hr" in show_df.columns:
             show_df["lag_add_hr"] = show_df["lag_add_hr"].round(2)
+        keep_cols = [c for c in col_map if c in show_df.columns]
+        st.dataframe(show_df[keep_cols].rename(columns=col_map), use_container_width=True, hide_index=True)
 
-        keep_cols = [c for c in col_map.keys() if c in show_df.columns]
-
-        st.dataframe(
-            show_df[keep_cols].rename(columns=col_map),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    with st.expander("Debug: slope"):
+    with st.expander("Debug: slope / OSM status"):
+        if use_fallback:
+            st.warning("Fallback synthetic grid is active.")
+            if spatial_error:
+                st.code(spatial_error)
+        else:
+            st.success("OSM layers loaded.")
+            st.write(
+                f"roads={spatial['roads_count']}, "
+                f"buildings={spatial['buildings_count']}, "
+                f"waterways={spatial['water_count']}"
+            )
         fig_s, ax_s = plt.subplots(figsize=(6, 5))
         ax_s.imshow(np.nan_to_num(slope, nan=0.0), cmap="terrain")
         ax_s.set_xticks([])
@@ -663,13 +589,8 @@ with right:
 
     fig_map, axm = plt.subplots(figsize=(7.2, 6.1))
     axm.imshow(category_map, cmap=cmap, origin="upper")
-
-    roads_img = np.where(roads & mask, 1.0, np.nan)
-    axm.imshow(roads_img, cmap=ListedColormap(["#4d4d4d"]), origin="upper", alpha=0.25)
-
-    river_img = np.where(river, 1.0, np.nan)
-    axm.imshow(river_img, cmap=ListedColormap(["#6baed6"]), origin="upper", alpha=0.45)
-
+    axm.imshow(np.where(roads & mask, 1.0, np.nan), cmap=ListedColormap(["#4d4d4d"]), origin="upper", alpha=0.25)
+    axm.imshow(np.where(river, 1.0, np.nan), cmap=ListedColormap(["#6baed6"]), origin="upper", alpha=0.45)
     axm.set_xticks([])
     axm.set_yticks([])
     axm.set_title("Categorized implementation map")
@@ -682,9 +603,6 @@ with right:
     legend_lines.append("Light blue = river / bayou")
     st.caption(" | ".join(legend_lines))
 
-# ============================================================
-# FOLIUM MAPS
-# ============================================================
 st.subheader("Estimated Flood Extent on Basemap")
 
 if use_fallback:
@@ -698,7 +616,6 @@ after_rgba = rgba_from_intensity(after_mask_clean, after_intensity)
 with col_map1:
     st.markdown("**Before NBS**")
     m_before = folium.Map(location=map_center, zoom_start=15, tiles=None)
-
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri World Imagery",
@@ -732,7 +649,6 @@ with col_map1:
 with col_map2:
     st.markdown("**After NBS**")
     m_after = folium.Map(location=map_center, zoom_start=15, tiles=None)
-
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri World Imagery",
