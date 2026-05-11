@@ -30,28 +30,163 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .block-container {padding-top: 2rem; padding-bottom: 2rem; max-width: 1500px;}
-    .main-title {font-size: 2.8rem; font-weight: 850; line-height: 1.05; margin-bottom: 0.25rem;}
-    .subtitle {color: #9ca3af; font-size: 1.02rem; margin-bottom: 2rem;}
-    .section-title {font-size: 1.55rem; font-weight: 800; margin-top: 1.8rem; margin-bottom: 0.85rem;}
-    .card {padding: 1.05rem 1.15rem; border-radius: 18px; border: 1px solid rgba(255,255,255,0.10); background: linear-gradient(135deg, rgba(30,41,59,0.96), rgba(15,23,42,0.96)); min-height: 115px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);}
-    .card-label {color: #cbd5e1; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.35rem;}
-    .card-value {color: white; font-size: 1.95rem; font-weight: 850; line-height: 1.1;}
-    .card-note {color: #94a3b8; font-size: 0.82rem; margin-top: 0.35rem;}
-    .blue-card {border-left: 6px solid #38bdf8;}
-    .orange-card {border-left: 6px solid #fb923c;}
-    .green-card {border-left: 6px solid #34d399;}
-    .purple-card {border-left: 6px solid #a78bfa;}
-    .compact-context {padding: 0.85rem 1rem; border-radius: 16px; background: rgba(30,41,59,0.72); border: 1px solid rgba(255,255,255,0.10); color: #d1d5db; font-size: 0.94rem;}
-    .nbs-card {padding: 1rem 1.1rem; border-radius: 18px; border: 1px solid rgba(255,255,255,0.10); background: rgba(15,23,42,0.72); margin-bottom: 0.8rem;}
-    .nbs-name {font-size: 1.05rem; font-weight: 800; color: #f8fafc; margin-bottom: 0.15rem;}
-    .nbs-family {display: inline-block; padding: 0.12rem 0.55rem; border-radius: 999px; background: rgba(52,211,153,0.14); color: #86efac; font-size: 0.75rem; font-weight: 800; margin-bottom: 0.4rem;}
-    .storage-family {background: rgba(56,189,248,0.14); color: #7dd3fc;}
-    .small-muted {color: #94a3b8; font-size: 0.88rem;}
-    .result-card {padding: 1rem 1.1rem; border-radius: 18px; background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.10); min-height: 110px;}
-    .result-label {color: #cbd5e1; font-size: 0.82rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;}
-    .result-value {font-size: 2.1rem; font-weight: 900; color: white; margin-top: 0.25rem;}
-    div[data-testid="stMetric"] {background: rgba(15,23,42,0.50); padding: 1rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08);}
+    .block-container {
+        padding-top: 2.0rem;
+        padding-bottom: 2.0rem;
+        max-width: 1500px;
+    }
+
+    .main-title {
+        font-size: 2.8rem;
+        font-weight: 850;
+        line-height: 1.05;
+        margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+        color: #9ca3af;
+        font-size: 1.02rem;
+        margin-bottom: 2rem;
+    }
+
+    .section-title {
+        font-size: 1.55rem;
+        font-weight: 800;
+        margin-top: 1.8rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .panel-title {
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        color: #94a3b8;
+        margin-top: 0.4rem;
+        margin-bottom: 0.6rem;
+        text-transform: uppercase;
+    }
+
+    .card {
+        padding: 1.05rem 1.15rem;
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: linear-gradient(135deg, rgba(30,41,59,0.96), rgba(15,23,42,0.96));
+        min-height: 115px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    }
+
+    .card-label {
+        color: #cbd5e1;
+        font-size: 0.82rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.35rem;
+    }
+
+    .card-value {
+        color: white;
+        font-size: 1.95rem;
+        font-weight: 850;
+        line-height: 1.1;
+    }
+
+    .card-note {
+        color: #94a3b8;
+        font-size: 0.82rem;
+        margin-top: 0.35rem;
+    }
+
+    .blue-card {
+        border-left: 6px solid #38bdf8;
+    }
+
+    .orange-card {
+        border-left: 6px solid #fb923c;
+    }
+
+    .green-card {
+        border-left: 6px solid #34d399;
+    }
+
+    .purple-card {
+        border-left: 6px solid #a78bfa;
+    }
+
+    .compact-context {
+        padding: 0.85rem 1rem;
+        border-radius: 16px;
+        background: rgba(30,41,59,0.72);
+        border: 1px solid rgba(255,255,255,0.10);
+        color: #d1d5db;
+        font-size: 0.94rem;
+    }
+
+    .nbs-card {
+        padding: 1rem 1.1rem;
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(15,23,42,0.72);
+        margin-bottom: 0.8rem;
+    }
+
+    .nbs-name {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #f8fafc;
+        margin-bottom: 0.15rem;
+    }
+
+    .nbs-family {
+        display: inline-block;
+        padding: 0.12rem 0.55rem;
+        border-radius: 999px;
+        background: rgba(52,211,153,0.14);
+        color: #86efac;
+        font-size: 0.75rem;
+        font-weight: 800;
+        margin-bottom: 0.4rem;
+    }
+
+    .storage-family {
+        background: rgba(56,189,248,0.14);
+        color: #7dd3fc;
+    }
+
+    .small-muted {
+        color: #94a3b8;
+        font-size: 0.88rem;
+    }
+
+    .result-card {
+        padding: 1rem 1.1rem;
+        border-radius: 18px;
+        background: rgba(15,23,42,0.85);
+        border: 1px solid rgba(255,255,255,0.10);
+        min-height: 110px;
+    }
+
+    .result-label {
+        color: #cbd5e1;
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .result-value {
+        font-size: 2.1rem;
+        font-weight: 900;
+        color: white;
+        margin-top: 0.25rem;
+    }
+
+    div[data-testid="stMetric"] {
+        background: rgba(15,23,42,0.50);
+        padding: 1rem;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.08);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -493,6 +628,7 @@ e1, e2, e3, e4 = st.columns(4)
 
 with e1:
     card("Return period", safe_text(event_row.get("return_period", "N/A")), "Event severity", "orange-card")
+
 with e2:
     card(
         "Rainfall",
@@ -500,6 +636,7 @@ with e2:
         f'{safe_text(event_row.get("date_start", "N/A"))} → {safe_text(event_row.get("date_end", "N/A"))}',
         "blue-card",
     )
+
 with e3:
     card(
         "Duration",
@@ -507,6 +644,7 @@ with e3:
         f'Mean intensity: {round(get_event_intensity_mm_hr(event_row), 2)} mm/h',
         "purple-card",
     )
+
 with e4:
     card("Rain type", short_text(event_row.get("rain_type", "N/A"), 20), "Storm classification", "green-card")
 
@@ -609,7 +747,13 @@ use_fallback = False
 spatial_error = None
 
 try:
-    spatial = build_real_spatial_layers(gauge_lat=gauge_lat, gauge_lon=gauge_lon, lat_pad=lat_pad, lon_pad=lon_pad, n=280)
+    spatial = build_real_spatial_layers(
+        gauge_lat=gauge_lat,
+        gauge_lon=gauge_lon,
+        lat_pad=lat_pad,
+        lon_pad=lon_pad,
+        n=280,
+    )
 except Exception as e:
     spatial_error = str(e)
     spatial = create_synthetic_spatial_layers(n=220)
@@ -624,7 +768,14 @@ outlet_zone = spatial["outlet_zone"]
 slope = spatial["slope"]
 flood_sus = spatial["flood_sus"]
 
-alloc, category_names = allocate_nbs_spatial_real(selected_df.copy(), mask, roads, buildings, impervious, outlet_zone)
+alloc, category_names = allocate_nbs_spatial_real(
+    selected_df.copy(),
+    mask,
+    roads,
+    buildings,
+    impervious,
+    outlet_zone,
+)
 
 rain_mm = float(event_row["rainfall_mm"])
 if rain_mm >= 250:
@@ -664,29 +815,89 @@ with k4:
 
 left, right = st.columns([1.08, 1.0])
 
+# ============================================================
+# LEFT: HYDROGRAPH + PROGRESS TABLE
+# ============================================================
 with left:
-    st.subheader("Hydrograph: Before vs After")
-    fig, ax = plt.subplots(figsize=(9, 4.8))
-    ax.plot(t, Q_base, "--", lw=2.4, label="Baseline")
-    ax.plot(t_mod, Q_mod, lw=2.6, label="With selected NBS")
-    ax.set_xlabel("Time (hours)")
-    ax.set_ylabel("Discharge (m³/s)")
-    ax.set_title("Outlet response")
-    ax.grid(alpha=0.25)
-    ax.legend()
-    st.pyplot(fig, use_container_width=True)
+    st.markdown('<div class="panel-title">🔵 Outlet hydrograph</div>', unsafe_allow_html=True)
 
-    st.subheader("Performance by Selected Solution")
+    fig, ax = plt.subplots(figsize=(9.5, 4.7))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    t_arr = np.array(t)
+    q_b = np.array(Q_base)
+    t_marr = np.array(t_mod)
+    q_m = np.array(Q_mod)
+
+    q_m_interp = np.interp(t_arr, t_marr, q_m)
+
+    ax.fill_between(
+        t_arr,
+        q_m_interp,
+        q_b,
+        where=q_b >= q_m_interp,
+        color="#F4B183",
+        alpha=0.22,
+        label="_nolegend_",
+    )
+
+    ax.plot(t_arr, q_b, color="#2E86DE", lw=2.6, label="Baseline", zorder=3)
+    ax.plot(t_marr, q_m, color="#4C8C2B", lw=2.6, label="With NBS", zorder=3)
+
+    base_peak_idx = int(np.argmax(q_b))
+    mod_peak_idx = int(np.argmax(q_m))
+
+    ax.scatter(t_arr[base_peak_idx], q_b[base_peak_idx], color="#2E86DE", s=28, zorder=5)
+    ax.text(
+        t_arr[base_peak_idx] + 1,
+        q_b[base_peak_idx],
+        f"{q_b[base_peak_idx]:.0f}",
+        color="#2E86DE",
+        fontsize=11,
+        fontweight="bold",
+    )
+
+    ax.scatter(t_marr[mod_peak_idx], q_m[mod_peak_idx], color="#4C8C2B", s=28, zorder=5)
+    ax.text(
+        t_marr[mod_peak_idx] + 1,
+        q_m[mod_peak_idx],
+        f"{q_m[mod_peak_idx]:.0f}",
+        color="#4C8C2B",
+        fontsize=11,
+        fontweight="bold",
+    )
+
+    ax.set_xlabel("Time (hours)", fontsize=10, color="#6b7280")
+    ax.set_ylabel("Discharge (m³/s)", fontsize=10, color="#6b7280")
+    ax.tick_params(colors="#9ca3af", labelsize=9)
+    ax.grid(axis="y", alpha=0.30, color="#e5e7eb")
+    ax.legend(fontsize=10, framealpha=0, labelcolor="#444", loc="upper right")
+
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#e5e7eb")
+
+    plt.tight_layout(pad=0.5)
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
+
+    st.markdown('<div class="panel-title">🟢 Performance by solution</div>', unsafe_allow_html=True)
+
     if not details_df.empty:
         show_df = details_df.copy()
-        col_map = {
-            "solution": "Solution",
-            "family": "Family",
-            "coverage_pct": "Coverage (%)",
-            "runoff_reduction_pct": "Runoff red. (%)",
-            "peak_reduction_pct": "Peak red. (%)",
-            "lag_add_hr": "Lag (h)",
-        }
+
+        # Harmonize possible column names from hydro_model.py
+        if "solution" not in show_df.columns and "name" in show_df.columns:
+            show_df["solution"] = show_df["name"]
+
+        if "runoff_reduction_pct" not in show_df.columns and "runoff_red_pct" in show_df.columns:
+            show_df["runoff_reduction_pct"] = show_df["runoff_red_pct"]
+
+        if "peak_reduction_pct" not in show_df.columns and "peak_red_pct" in show_df.columns:
+            show_df["peak_reduction_pct"] = show_df["peak_red_pct"]
+
+        if "lag_add_hr" not in show_df.columns and "lag_hr" in show_df.columns:
+            show_df["lag_add_hr"] = show_df["lag_hr"]
 
         for col in ["runoff_reduction_pct", "peak_reduction_pct"]:
             if col in show_df.columns:
@@ -695,9 +906,53 @@ with left:
         if "lag_add_hr" in show_df.columns:
             show_df["lag_add_hr"] = show_df["lag_add_hr"].round(2)
 
-        keep_cols = [c for c in col_map if c in show_df.columns]
-        st.dataframe(show_df[keep_cols].rename(columns=col_map), use_container_width=True, hide_index=True)
+        if "coverage_pct" in show_df.columns:
+            show_df["coverage_pct"] = show_df["coverage_pct"].astype(float).round(0)
 
+        col_map = {
+            "solution": "Solution",
+            "family": "Type",
+            "coverage_pct": "Coverage",
+            "runoff_reduction_pct": "Runoff ↓",
+            "peak_reduction_pct": "Peak ↓",
+            "lag_add_hr": "Lag (h)",
+        }
+
+        keep_cols = [c for c in col_map.keys() if c in show_df.columns]
+
+        table_df = show_df[keep_cols].rename(columns=col_map)
+
+        st.dataframe(
+            table_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Coverage": st.column_config.NumberColumn(
+                    "Coverage",
+                    format="%d%%",
+                ),
+                "Runoff ↓": st.column_config.ProgressColumn(
+                    "Runoff ↓",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=50,
+                ),
+                "Peak ↓": st.column_config.ProgressColumn(
+                    "Peak ↓",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=50,
+                ),
+                "Lag (h)": st.column_config.NumberColumn(
+                    "Lag (h)",
+                    format="%.2f",
+                ),
+            },
+        )
+
+# ============================================================
+# RIGHT: MAPS + ASSUMPTIONS
+# ============================================================
 with right:
     st.subheader("NBS Spatial Allocation")
     category_map = np.full(mask.shape, np.nan)
@@ -705,17 +960,41 @@ with right:
     category_map[alloc > 0] = alloc[alloc > 0]
 
     n_cat = int(np.nanmax(np.nan_to_num(category_map, nan=0)))
-    colors = ["#d9d9d9", "#2ca25f", "#99d8c9", "#66c2a4", "#41ae76", "#238b45", "#006d2c", "#3182bd", "#6baed6", "#9ecae1"]
+    colors = [
+        "#d9d9d9",
+        "#2ca25f",
+        "#99d8c9",
+        "#66c2a4",
+        "#41ae76",
+        "#238b45",
+        "#006d2c",
+        "#3182bd",
+        "#6baed6",
+        "#9ecae1",
+    ]
     cmap = ListedColormap(colors[: max(n_cat + 1, 2)])
 
     fig_map, axm = plt.subplots(figsize=(7.2, 6.1))
+    fig_map.patch.set_facecolor("white")
+    axm.set_facecolor("white")
     axm.imshow(category_map, cmap=cmap, origin="upper")
-    axm.imshow(np.where(roads & mask, 1.0, np.nan), cmap=ListedColormap(["#4d4d4d"]), origin="upper", alpha=0.25)
-    axm.imshow(np.where(river, 1.0, np.nan), cmap=ListedColormap(["#6baed6"]), origin="upper", alpha=0.45)
+    axm.imshow(
+        np.where(roads & mask, 1.0, np.nan),
+        cmap=ListedColormap(["#4d4d4d"]),
+        origin="upper",
+        alpha=0.25,
+    )
+    axm.imshow(
+        np.where(river, 1.0, np.nan),
+        cmap=ListedColormap(["#6baed6"]),
+        origin="upper",
+        alpha=0.45,
+    )
     axm.set_xticks([])
     axm.set_yticks([])
     axm.set_title("Categorized implementation map")
     st.pyplot(fig_map, use_container_width=True)
+    plt.close(fig_map)
 
     legend_lines = ["0 = untreated / baseline urban area"]
     for i, name in enumerate(category_names, start=1):
@@ -725,20 +1004,26 @@ with right:
     st.caption(" | ".join(legend_lines))
 
     with st.expander("Model assumptions and status"):
-        st.markdown("""
-        - This is a conceptual decision-support prototype, not a calibrated 2D hydraulic simulation.
-        - Hydrologic effects are based on literature-derived NBS performance parameters.
-        - Flood extent is estimated using local streets/buildings/waterways, an outlet-driven slope proxy,
-          and relative flood susceptibility.
-        - Results should be interpreted comparatively across scenarios.
-        """)
+        st.markdown(
+            """
+            - This is a conceptual decision-support prototype, not a calibrated 2D hydraulic simulation.
+            - Hydrologic effects are based on literature-derived NBS performance parameters.
+            - Flood extent is estimated using local streets/buildings/waterways, an outlet-driven slope proxy,
+              and relative flood susceptibility.
+            - Results should be interpreted comparatively across scenarios.
+            """
+        )
         if use_fallback:
             st.warning("Fallback synthetic grid is active.")
             if spatial_error:
                 st.code(spatial_error)
         else:
             st.success("OSM layers loaded successfully.")
-            st.write(f"roads={spatial['roads_count']}, buildings={spatial['buildings_count']}, waterways={spatial['water_count']}")
+            st.write(
+                f"roads={spatial['roads_count']}, "
+                f"buildings={spatial['buildings_count']}, "
+                f"waterways={spatial['water_count']}"
+            )
 
 # ============================================================
 # 4. FLOOD MAPS
@@ -758,18 +1043,66 @@ after_rgba = rgba_from_intensity(after_mask_clean, after_intensity)
 with col_map1:
     st.markdown("**Before NBS**")
     m_before = folium.Map(location=map_center, zoom_start=15, tiles=None)
-    folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri World Imagery", name="Satellite", overlay=False, control=True).add_to(m_before)
-    folium.CircleMarker(location=[gauge_lat, gauge_lon], radius=6, color="red", fill=True, fill_color="red", fill_opacity=0.95, tooltip=f"Outlet gauge: {gauge_row['name']}").add_to(m_before)
-    ImageOverlay(image=before_rgba, bounds=map_bounds, opacity=1.0, interactive=True, cross_origin=False, zindex=10).add_to(m_before)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri World Imagery",
+        name="Satellite",
+        overlay=False,
+        control=True,
+    ).add_to(m_before)
+
+    folium.CircleMarker(
+        location=[gauge_lat, gauge_lon],
+        radius=6,
+        color="red",
+        fill=True,
+        fill_color="red",
+        fill_opacity=0.95,
+        tooltip=f"Outlet gauge: {gauge_row['name']}",
+    ).add_to(m_before)
+
+    ImageOverlay(
+        image=before_rgba,
+        bounds=map_bounds,
+        opacity=1.0,
+        interactive=True,
+        cross_origin=False,
+        zindex=10,
+    ).add_to(m_before)
+
     folium.LayerControl().add_to(m_before)
     st_folium(m_before, width=700, height=520, key="before_map")
 
 with col_map2:
     st.markdown("**After NBS**")
     m_after = folium.Map(location=map_center, zoom_start=15, tiles=None)
-    folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri World Imagery", name="Satellite", overlay=False, control=True).add_to(m_after)
-    folium.CircleMarker(location=[gauge_lat, gauge_lon], radius=6, color="red", fill=True, fill_color="red", fill_opacity=0.95, tooltip=f"Outlet gauge: {gauge_row['name']}").add_to(m_after)
-    ImageOverlay(image=after_rgba, bounds=map_bounds, opacity=1.0, interactive=True, cross_origin=False, zindex=10).add_to(m_after)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri World Imagery",
+        name="Satellite",
+        overlay=False,
+        control=True,
+    ).add_to(m_after)
+
+    folium.CircleMarker(
+        location=[gauge_lat, gauge_lon],
+        radius=6,
+        color="red",
+        fill=True,
+        fill_color="red",
+        fill_opacity=0.95,
+        tooltip=f"Outlet gauge: {gauge_row['name']}",
+    ).add_to(m_after)
+
+    ImageOverlay(
+        image=after_rgba,
+        bounds=map_bounds,
+        opacity=1.0,
+        interactive=True,
+        cross_origin=False,
+        zindex=10,
+    ).add_to(m_after)
+
     folium.LayerControl().add_to(m_after)
     st_folium(m_after, width=700, height=520, key="after_map")
 
