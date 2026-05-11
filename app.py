@@ -813,7 +813,7 @@ with k3:
 with k4:
     result_card("Flood extent reduction", f"{flood_extent_reduction_pct:.1f}%", "Estimated spatial impact", "#34d399")
 
-left, right = st.columns([1.08, 1.0])
+left, right = st.columns([1.05, 1.0], gap="large")
 
 # ============================================================
 # LEFT: HYDROGRAPH + PROGRESS TABLE
@@ -954,7 +954,20 @@ with left:
 # RIGHT: MAPS + ASSUMPTIONS
 # ============================================================
 with right:
-    st.subheader("NBS Spatial Allocation")
+    st.markdown(
+        """
+        <div style="
+            margin-top:-6px;
+            margin-bottom:10px;
+            font-size:2rem;
+            font-weight:800;
+            line-height:1.15;
+        ">
+        NBS Spatial Allocation
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     category_map = np.full(mask.shape, np.nan)
     category_map[mask] = 0
     category_map[alloc > 0] = alloc[alloc > 0]
@@ -974,7 +987,7 @@ with right:
     ]
     cmap = ListedColormap(colors[: max(n_cat + 1, 2)])
 
-    fig_map, axm = plt.subplots(figsize=(7.2, 6.1))
+    fig_map, axm = plt.subplots(figsize=(7.2, 5.75))
     fig_map.patch.set_facecolor("white")
     axm.set_facecolor("white")
     axm.imshow(category_map, cmap=cmap, origin="upper")
@@ -993,6 +1006,7 @@ with right:
     axm.set_xticks([])
     axm.set_yticks([])
     axm.set_title("Categorized implementation map")
+    plt.tight_layout(pad=0.2)
     st.pyplot(fig_map, use_container_width=True)
     plt.close(fig_map)
 
