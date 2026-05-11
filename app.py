@@ -954,20 +954,6 @@ with left:
 # RIGHT: MAPS + ASSUMPTIONS
 # ============================================================
 with right:
-    st.markdown(
-        """
-        <div style="
-            margin-top:-6px;
-            margin-bottom:10px;
-            font-size:2rem;
-            font-weight:800;
-            line-height:1.15;
-        ">
-        NBS Spatial Allocation
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     category_map = np.full(mask.shape, np.nan)
     category_map[mask] = 0
     category_map[alloc > 0] = alloc[alloc > 0]
