@@ -18,9 +18,48 @@ from hydro_model import (
     get_event_intensity_mm_hr,
 )
 
-st.set_page_config(page_title="Houston NBS Flood Explorer", layout="wide")
+st.set_page_config(
+    page_title="Houston Urban Flood Explorer",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
+# ============================================================
+# STYLE
+# ============================================================
+st.markdown(
+    """
+    <style>
+    .block-container {padding-top: 2rem; padding-bottom: 2rem; max-width: 1500px;}
+    .main-title {font-size: 2.8rem; font-weight: 850; line-height: 1.05; margin-bottom: 0.25rem;}
+    .subtitle {color: #9ca3af; font-size: 1.02rem; margin-bottom: 2rem;}
+    .section-title {font-size: 1.55rem; font-weight: 800; margin-top: 1.8rem; margin-bottom: 0.85rem;}
+    .card {padding: 1.05rem 1.15rem; border-radius: 18px; border: 1px solid rgba(255,255,255,0.10); background: linear-gradient(135deg, rgba(30,41,59,0.96), rgba(15,23,42,0.96)); min-height: 115px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);}
+    .card-label {color: #cbd5e1; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.35rem;}
+    .card-value {color: white; font-size: 1.95rem; font-weight: 850; line-height: 1.1;}
+    .card-note {color: #94a3b8; font-size: 0.82rem; margin-top: 0.35rem;}
+    .blue-card {border-left: 6px solid #38bdf8;}
+    .orange-card {border-left: 6px solid #fb923c;}
+    .green-card {border-left: 6px solid #34d399;}
+    .purple-card {border-left: 6px solid #a78bfa;}
+    .compact-context {padding: 0.85rem 1rem; border-radius: 16px; background: rgba(30,41,59,0.72); border: 1px solid rgba(255,255,255,0.10); color: #d1d5db; font-size: 0.94rem;}
+    .nbs-card {padding: 1rem 1.1rem; border-radius: 18px; border: 1px solid rgba(255,255,255,0.10); background: rgba(15,23,42,0.72); margin-bottom: 0.8rem;}
+    .nbs-name {font-size: 1.05rem; font-weight: 800; color: #f8fafc; margin-bottom: 0.15rem;}
+    .nbs-family {display: inline-block; padding: 0.12rem 0.55rem; border-radius: 999px; background: rgba(52,211,153,0.14); color: #86efac; font-size: 0.75rem; font-weight: 800; margin-bottom: 0.4rem;}
+    .storage-family {background: rgba(56,189,248,0.14); color: #7dd3fc;}
+    .small-muted {color: #94a3b8; font-size: 0.88rem;}
+    .result-card {padding: 1rem 1.1rem; border-radius: 18px; background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.10); min-height: 110px;}
+    .result-label {color: #cbd5e1; font-size: 0.82rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;}
+    .result-value {font-size: 2.1rem; font-weight: 900; color: white; margin-top: 0.25rem;}
+    div[data-testid="stMetric"] {background: rgba(15,23,42,0.50); padding: 1rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08);}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
+# ============================================================
+# DATA
+# ============================================================
 @st.cache_data
 def load_tabular_data():
     return (
@@ -32,6 +71,47 @@ def load_tabular_data():
 
 
 events, watersheds, gauges, nbs_catalog = load_tabular_data()
+
+# ============================================================
+# HELPERS
+# ============================================================
+def safe_text(value, fallback="N/A"):
+    if pd.isna(value):
+        return fallback
+    return str(value)
+
+
+def short_text(value, max_chars=34):
+    value = safe_text(value)
+    if len(value) <= max_chars:
+        return value
+    return value[: max_chars - 3] + "..."
+
+
+def card(label, value, note="", color_class="blue-card"):
+    st.markdown(
+        f"""
+        <div class="card {color_class}">
+            <div class="card-label">{label}</div>
+            <div class="card-value">{value}</div>
+            <div class="card-note">{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def result_card(label, value, note="", accent="#38bdf8"):
+    st.markdown(
+        f"""
+        <div class="result-card" style="border-left: 6px solid {accent};">
+            <div class="result-label">{label}</div>
+            <div class="result-value">{value}</div>
+            <div class="card-note">{note}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def rgba_from_intensity(mask, intensity, color=(30, 110, 255), max_alpha=255):
@@ -64,10 +144,6 @@ def smooth2d(arr, n_iter=2):
 
 
 def features_from_bbox_compat(north, south, east, west, tags):
-    """
-    Compatible wrapper for OSMnx v1/v2.
-    OSMnx v2 expects bbox=(west, south, east, north).
-    """
     bbox = (west, south, east, north)
     try:
         return ox.features_from_bbox(bbox, tags=tags)
@@ -188,7 +264,11 @@ def build_real_spatial_layers(gauge_lat, gauge_lon, lat_pad, lon_pad, n=280):
     low_spots = 0.55 * outlet_zone + 0.18 * smooth2d(river_f, 4) + 0.18 * np.nan_to_num(slope, nan=0.0)
     low_spots[~mask] = 0.0
 
-    flow_accum = np.clip(np.nan_to_num(slope, nan=0.0) * np.nan_to_num(impervious, nan=0.0), 0, 1)
+    flow_accum = np.clip(
+        np.nan_to_num(slope, nan=0.0) * np.nan_to_num(impervious, nan=0.0),
+        0,
+        1,
+    )
 
     flood_sus = (
         0.42 * roads_f
@@ -359,23 +439,47 @@ def compute_flood_masks(flood_sus, alloc, selected_df, base_threshold):
 
 
 # ============================================================
-# APP
+# APP HEADER
 # ============================================================
-st.title("Houston Nature-Based Solutions Flood Explorer")
-st.caption(
-    "Conceptual prototype: event-based hydrologic response, watershed attributes, "
-    "real street/building-based spatial layers, and estimated urban flood extent."
+st.markdown(
+    """
+    <div class="main-title">Houston Urban Flood Explorer</div>
+    <div class="subtitle">
+        Event-based hydrologic response and nature-based mitigation scenarios for urban flood risk reduction.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
-with st.sidebar:
-    st.header("1) Event")
-    selected_event_name = st.selectbox("Select event", events["name"].tolist())
-    event_row = events.loc[events["name"] == selected_event_name].iloc[0]
-    watershed_row = watersheds.loc[watersheds["watershed_id"] == event_row["watershed_id"]].iloc[0]
-    gauge_row = gauges.loc[gauges["gauge_id"] == event_row["gauge_id"]].iloc[0]
+# ============================================================
+# 1. EVENT SELECTION
+# ============================================================
+st.markdown('<div class="section-title">1. Select Storm Event</div>', unsafe_allow_html=True)
 
-    st.header("2) Solutions")
-    st.caption("Choose one or several solutions and assign a coverage percentage.")
+event_col, help_col = st.columns([1.25, 1.0])
+
+with event_col:
+    selected_event_name = st.selectbox(
+        "Choose a rainfall event",
+        events["name"].tolist(),
+        index=0,
+        help="Each event contains rainfall depth, duration, return period, and watershed/gauge links.",
+    )
+
+event_row = events.loc[events["name"] == selected_event_name].iloc[0]
+watershed_row = watersheds.loc[watersheds["watershed_id"] == event_row["watershed_id"]].iloc[0]
+gauge_row = gauges.loc[gauges["gauge_id"] == event_row["gauge_id"]].iloc[0]
+
+with help_col:
+    st.markdown(
+        """
+        <div class="compact-context">
+        <b>Workflow:</b> select a storm event, configure NBS coverage, then compare outlet hydrograph and
+        estimated street-level flood extent before and after implementation.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 gauge_lat = float(gauge_row["lat"])
 gauge_lon = float(gauge_row["lon"])
@@ -384,67 +488,111 @@ lon_pad = 0.014
 map_bounds = [[gauge_lat - lat_pad, gauge_lon - lon_pad], [gauge_lat + lat_pad, gauge_lon + lon_pad]]
 map_center = [gauge_lat, gauge_lon]
 
-top1, top2 = st.columns([1.2, 1.0])
+st.markdown("### Event summary")
+e1, e2, e3, e4 = st.columns(4)
 
-with top1:
-    st.subheader("Selected Event")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Dates", f"{event_row.get('date_start', 'N/A')} → {event_row.get('date_end', 'N/A')}")
-    c2.metric("Return period", str(event_row.get("return_period", "N/A")))
-    c3.metric("Rainfall", f"{event_row.get('rainfall_mm', 'N/A')} mm")
-
-    c4, c5, c6 = st.columns(3)
-    c4.metric("Rain type", str(event_row.get("rain_type", "N/A")))
-    c5.metric("Duration", f"{event_row.get('duration_hr', 'N/A')} h")
-    c6.metric("Mean intensity", f"{round(get_event_intensity_mm_hr(event_row), 2)} mm/h")
-
-with top2:
-    st.subheader("Watershed Context")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Watershed", watershed_row.get("name", "N/A"))
-    c2.metric("Area", f"{watershed_row.get('area_km2', 'N/A')} km²")
-    c3.metric("Imperviousness", f"{watershed_row.get('impervious_pct', 'N/A')}%")
-
-    c4, c5, c6 = st.columns(3)
-    c4.metric("Initial abstraction", f"{watershed_row.get('initial_abstraction_mm', 'N/A')} mm")
-    c5.metric("Curve Number", f"{watershed_row.get('curve_number', 'N/A')}")
-    c6.metric("Urban LULC", f"{watershed_row.get('lulc_urban_pct', 'N/A')}%")
-
-    st.caption(
-        f"Gauge: {gauge_row.get('name', 'N/A')} | "
-        f"Green LULC: {watershed_row.get('lulc_green_pct', 'N/A')}% | "
-        f"Water/wet areas: {watershed_row.get('lulc_water_pct', 'N/A')}%"
+with e1:
+    card("Return period", safe_text(event_row.get("return_period", "N/A")), "Event severity", "orange-card")
+with e2:
+    card(
+        "Rainfall",
+        f'{safe_text(event_row.get("rainfall_mm", "N/A"))} mm',
+        f'{safe_text(event_row.get("date_start", "N/A"))} → {safe_text(event_row.get("date_end", "N/A"))}',
+        "blue-card",
     )
+with e3:
+    card(
+        "Duration",
+        f'{safe_text(event_row.get("duration_hr", "N/A"))} h',
+        f'Mean intensity: {round(get_event_intensity_mm_hr(event_row), 2)} mm/h',
+        "purple-card",
+    )
+with e4:
+    card("Rain type", short_text(event_row.get("rain_type", "N/A"), 20), "Storm classification", "green-card")
 
-st.subheader("Nature-Based Solutions Selection")
-
-editor_df = nbs_catalog.copy()
-editor_df["use"] = False
-editor_df["coverage_pct"] = 0
-
-edited = st.data_editor(
-    editor_df[["family", "name", "use", "coverage_pct", "notes"]],
-    hide_index=True,
-    use_container_width=True,
-    column_config={
-        "family": st.column_config.TextColumn("Family", disabled=True),
-        "name": st.column_config.TextColumn("Solution", disabled=True),
-        "use": st.column_config.CheckboxColumn("Use"),
-        "coverage_pct": st.column_config.NumberColumn("Coverage (%)", min_value=0, max_value=50, step=5),
-        "notes": st.column_config.TextColumn("Hydrologic role", disabled=True),
-    },
-    key="nbs_editor",
+st.markdown("### Watershed context")
+st.markdown(
+    f"""
+    <div class="compact-context">
+    <b>{safe_text(watershed_row.get("name", "Watershed"))}</b> &nbsp; | &nbsp;
+    Area: <b>{safe_text(watershed_row.get("area_km2", "N/A"))} km²</b> &nbsp; | &nbsp;
+    Imperviousness: <b>{safe_text(watershed_row.get("impervious_pct", "N/A"))}%</b> &nbsp; | &nbsp;
+    Curve Number: <b>{safe_text(watershed_row.get("curve_number", "N/A"))}</b> &nbsp; | &nbsp;
+    Initial abstraction: <b>{safe_text(watershed_row.get("initial_abstraction_mm", "N/A"))} mm</b><br>
+    Gauge: <b>{safe_text(gauge_row.get("name", "N/A"))}</b> &nbsp; | &nbsp;
+    Urban LULC: <b>{safe_text(watershed_row.get("lulc_urban_pct", "N/A"))}%</b> &nbsp; | &nbsp;
+    Green LULC: <b>{safe_text(watershed_row.get("lulc_green_pct", "N/A"))}%</b> &nbsp; | &nbsp;
+    Water/wet areas: <b>{safe_text(watershed_row.get("lulc_water_pct", "N/A"))}%</b>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
-selected_df = nbs_catalog.copy()
-selected_df["use"] = edited["use"]
-selected_df["coverage_pct"] = edited["coverage_pct"]
-selected_df = selected_df[(selected_df["use"] == True) & (selected_df["coverage_pct"] > 0)].reset_index(drop=True)
+# ============================================================
+# 2. NBS CONFIGURATION
+# ============================================================
+st.markdown('<div class="section-title">2. Configure Nature-Based Solutions</div>', unsafe_allow_html=True)
+st.caption("Set coverage using sliders. Coverage represents the share of eligible urban area treated by each solution.")
+
+selected_rows = []
+
+for _, row in nbs_catalog.iterrows():
+    family = safe_text(row.get("family", "NBS"))
+    name = safe_text(row.get("name", "Solution"))
+    notes = safe_text(row.get("notes", ""))
+    max_coverage = 50
+
+    default_coverage = 0
+    if name == "Bioretention":
+        default_coverage = 50
+    elif name == "Green Roof":
+        default_coverage = 20
+    elif name == "Detention Pond":
+        default_coverage = 50
+
+    st.markdown('<div class="nbs-card">', unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1.45, 2.4, 2.1])
+
+    with c1:
+        family_class = "storage-family" if family.lower() == "storage" else ""
+        st.markdown(
+            f"""
+            <div class="nbs-name">{name}</div>
+            <span class="nbs-family {family_class}">{family}</span>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c2:
+        st.markdown(f'<div class="small-muted">{notes}</div>', unsafe_allow_html=True)
+
+    with c3:
+        coverage = st.slider(
+            f"{name} coverage",
+            min_value=0,
+            max_value=max_coverage,
+            value=default_coverage,
+            step=5,
+            key=f"coverage_{name}",
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if coverage > 0:
+        tmp = row.copy()
+        tmp["use"] = True
+        tmp["coverage_pct"] = coverage
+        selected_rows.append(tmp)
+
+selected_df = pd.DataFrame(selected_rows)
 
 if selected_df.empty:
-    st.warning("Select at least one solution and assign a coverage percentage to generate the scenario.")
+    st.warning("Set at least one NBS coverage slider above 0% to generate the scenario.")
     st.stop()
 
+# ============================================================
+# HYDROGRAPH + SCENARIO
+# ============================================================
 baseline = build_baseline_hydrograph_from_event(event_row, watershed_row)
 scenario = apply_nbs_to_hydrograph(baseline, selected_df, event_row)
 
@@ -454,17 +602,14 @@ Q_base = scenario["q_base_m3s"]
 Q_mod = scenario["q_mod_m3s"]
 details_df = scenario["details_df"]
 
+# ============================================================
+# SPATIAL LAYERS
+# ============================================================
 use_fallback = False
 spatial_error = None
 
 try:
-    spatial = build_real_spatial_layers(
-        gauge_lat=gauge_lat,
-        gauge_lon=gauge_lon,
-        lat_pad=lat_pad,
-        lon_pad=lon_pad,
-        n=280,
-    )
+    spatial = build_real_spatial_layers(gauge_lat=gauge_lat, gauge_lon=gauge_lon, lat_pad=lat_pad, lon_pad=lon_pad, n=280)
 except Exception as e:
     spatial_error = str(e)
     spatial = create_synthetic_spatial_layers(n=220)
@@ -479,9 +624,7 @@ outlet_zone = spatial["outlet_zone"]
 slope = spatial["slope"]
 flood_sus = spatial["flood_sus"]
 
-alloc, category_names = allocate_nbs_spatial_real(
-    selected_df.copy(), mask, roads, buildings, impervious, outlet_zone
-)
+alloc, category_names = allocate_nbs_spatial_real(selected_df.copy(), mask, roads, buildings, impervious, outlet_zone)
 
 rain_mm = float(event_row["rainfall_mm"])
 if rain_mm >= 250:
@@ -504,29 +647,34 @@ after_intensity = np.nan_to_num(flood_sus, nan=0.0).copy()
 before_intensity[river] = 0.0
 after_intensity[river] = 0.0
 
-left, right = st.columns([1.1, 1.0])
+# ============================================================
+# 3. RESULTS
+# ============================================================
+st.markdown('<div class="section-title">3. Scenario Results</div>', unsafe_allow_html=True)
+
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    result_card("Peak reduction", f"{scenario['peak_reduction_pct']:.1f}%", "Lower outlet peak", "#fb923c")
+with k2:
+    result_card("Runoff reduction", f"{scenario['runoff_reduction_pct']:.1f}%", "Lower total volume", "#38bdf8")
+with k3:
+    result_card("Lag increase", f"{scenario['lag_increase_hr']:.2f} h", "Delayed response", "#a78bfa")
+with k4:
+    result_card("Flood extent reduction", f"{flood_extent_reduction_pct:.1f}%", "Estimated spatial impact", "#34d399")
+
+left, right = st.columns([1.08, 1.0])
 
 with left:
     st.subheader("Hydrograph: Before vs After")
     fig, ax = plt.subplots(figsize=(9, 4.8))
-    ax.plot(t, Q_base, "--", lw=2.2, label="Baseline")
-    ax.plot(t_mod, Q_mod, lw=2.4, label="With selected NBS")
+    ax.plot(t, Q_base, "--", lw=2.4, label="Baseline")
+    ax.plot(t_mod, Q_mod, lw=2.6, label="With selected NBS")
     ax.set_xlabel("Time (hours)")
     ax.set_ylabel("Discharge (m³/s)")
     ax.set_title("Outlet response")
-    ax.grid(alpha=0.3)
+    ax.grid(alpha=0.25)
     ax.legend()
     st.pyplot(fig, use_container_width=True)
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Peak reduction", f"{scenario['peak_reduction_pct']:.1f}%")
-    m2.metric("Runoff reduction", f"{scenario['runoff_reduction_pct']:.1f}%")
-    m3.metric("Lag increase", f"{scenario['lag_increase_hr']:.2f} h")
-    m4.metric("Flood extent reduction", f"{flood_extent_reduction_pct:.1f}%")
-
-    m5, m6 = st.columns(2)
-    m5.metric("Runoff coeff. (base)", f"{scenario['effective_runoff_coeff_base']:.2f}")
-    m6.metric("Runoff coeff. (with NBS)", f"{scenario['effective_runoff_coeff_mod']:.2f}")
 
     st.subheader("Performance by Selected Solution")
     if not details_df.empty:
@@ -539,52 +687,25 @@ with left:
             "peak_reduction_pct": "Peak red. (%)",
             "lag_add_hr": "Lag (h)",
         }
+
         for col in ["runoff_reduction_pct", "peak_reduction_pct"]:
             if col in show_df.columns:
                 show_df[col] = show_df[col].round(1)
+
         if "lag_add_hr" in show_df.columns:
             show_df["lag_add_hr"] = show_df["lag_add_hr"].round(2)
+
         keep_cols = [c for c in col_map if c in show_df.columns]
         st.dataframe(show_df[keep_cols].rename(columns=col_map), use_container_width=True, hide_index=True)
 
-    with st.expander("Debug: slope / OSM status"):
-        if use_fallback:
-            st.warning("Fallback synthetic grid is active.")
-            if spatial_error:
-                st.code(spatial_error)
-        else:
-            st.success("OSM layers loaded.")
-            st.write(
-                f"roads={spatial['roads_count']}, "
-                f"buildings={spatial['buildings_count']}, "
-                f"waterways={spatial['water_count']}"
-            )
-        fig_s, ax_s = plt.subplots(figsize=(6, 5))
-        ax_s.imshow(np.nan_to_num(slope, nan=0.0), cmap="terrain")
-        ax_s.set_xticks([])
-        ax_s.set_yticks([])
-        ax_s.set_title("Slope toward outlet")
-        st.pyplot(fig_s, use_container_width=True)
-
 with right:
-    st.subheader("Watershed Map: NBS Spatial Allocation")
+    st.subheader("NBS Spatial Allocation")
     category_map = np.full(mask.shape, np.nan)
     category_map[mask] = 0
     category_map[alloc > 0] = alloc[alloc > 0]
 
     n_cat = int(np.nanmax(np.nan_to_num(category_map, nan=0)))
-    colors = [
-        "#d9d9d9",
-        "#2ca25f",
-        "#99d8c9",
-        "#66c2a4",
-        "#41ae76",
-        "#238b45",
-        "#006d2c",
-        "#3182bd",
-        "#6baed6",
-        "#9ecae1",
-    ]
+    colors = ["#d9d9d9", "#2ca25f", "#99d8c9", "#66c2a4", "#41ae76", "#238b45", "#006d2c", "#3182bd", "#6baed6", "#9ecae1"]
     cmap = ListedColormap(colors[: max(n_cat + 1, 2)])
 
     fig_map, axm = plt.subplots(figsize=(7.2, 6.1))
@@ -603,10 +724,31 @@ with right:
     legend_lines.append("Light blue = river / bayou")
     st.caption(" | ".join(legend_lines))
 
-st.subheader("Estimated Flood Extent on Basemap")
+    with st.expander("Model assumptions and status"):
+        st.markdown("""
+        - This is a conceptual decision-support prototype, not a calibrated 2D hydraulic simulation.
+        - Hydrologic effects are based on literature-derived NBS performance parameters.
+        - Flood extent is estimated using local streets/buildings/waterways, an outlet-driven slope proxy,
+          and relative flood susceptibility.
+        - Results should be interpreted comparatively across scenarios.
+        """)
+        if use_fallback:
+            st.warning("Fallback synthetic grid is active.")
+            if spatial_error:
+                st.code(spatial_error)
+        else:
+            st.success("OSM layers loaded successfully.")
+            st.write(f"roads={spatial['roads_count']}, buildings={spatial['buildings_count']}, waterways={spatial['water_count']}")
+
+# ============================================================
+# 4. FLOOD MAPS
+# ============================================================
+st.markdown('<div class="section-title">4. Estimated Flood Extent on Basemap</div>', unsafe_allow_html=True)
 
 if use_fallback:
     st.warning("OSM layers could not be loaded. A synthetic fallback spatial grid is being used.")
+
+st.caption("Blue overlay = estimated street-level flood susceptibility. Red marker = outlet gauge.")
 
 col_map1, col_map2 = st.columns(2)
 
@@ -616,71 +758,23 @@ after_rgba = rgba_from_intensity(after_mask_clean, after_intensity)
 with col_map1:
     st.markdown("**Before NBS**")
     m_before = folium.Map(location=map_center, zoom_start=15, tiles=None)
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri World Imagery",
-        name="Satellite",
-        overlay=False,
-        control=True,
-    ).add_to(m_before)
-
-    folium.CircleMarker(
-        location=[gauge_lat, gauge_lon],
-        radius=6,
-        color="red",
-        fill=True,
-        fill_color="red",
-        fill_opacity=0.95,
-        tooltip=f"Outlet gauge: {gauge_row['name']}",
-    ).add_to(m_before)
-
-    ImageOverlay(
-        image=before_rgba,
-        bounds=map_bounds,
-        opacity=1.0,
-        interactive=True,
-        cross_origin=False,
-        zindex=10,
-    ).add_to(m_before)
-
+    folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri World Imagery", name="Satellite", overlay=False, control=True).add_to(m_before)
+    folium.CircleMarker(location=[gauge_lat, gauge_lon], radius=6, color="red", fill=True, fill_color="red", fill_opacity=0.95, tooltip=f"Outlet gauge: {gauge_row['name']}").add_to(m_before)
+    ImageOverlay(image=before_rgba, bounds=map_bounds, opacity=1.0, interactive=True, cross_origin=False, zindex=10).add_to(m_before)
     folium.LayerControl().add_to(m_before)
     st_folium(m_before, width=700, height=520, key="before_map")
 
 with col_map2:
     st.markdown("**After NBS**")
     m_after = folium.Map(location=map_center, zoom_start=15, tiles=None)
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri World Imagery",
-        name="Satellite",
-        overlay=False,
-        control=True,
-    ).add_to(m_after)
-
-    folium.CircleMarker(
-        location=[gauge_lat, gauge_lon],
-        radius=6,
-        color="red",
-        fill=True,
-        fill_color="red",
-        fill_opacity=0.95,
-        tooltip=f"Outlet gauge: {gauge_row['name']}",
-    ).add_to(m_after)
-
-    ImageOverlay(
-        image=after_rgba,
-        bounds=map_bounds,
-        opacity=1.0,
-        interactive=True,
-        cross_origin=False,
-        zindex=10,
-    ).add_to(m_after)
-
+    folium.TileLayer(tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr="Esri World Imagery", name="Satellite", overlay=False, control=True).add_to(m_after)
+    folium.CircleMarker(location=[gauge_lat, gauge_lon], radius=6, color="red", fill=True, fill_color="red", fill_opacity=0.95, tooltip=f"Outlet gauge: {gauge_row['name']}").add_to(m_after)
+    ImageOverlay(image=after_rgba, bounds=map_bounds, opacity=1.0, interactive=True, cross_origin=False, zindex=10).add_to(m_after)
     folium.LayerControl().add_to(m_after)
     st_folium(m_after, width=700, height=520, key="after_map")
 
 st.caption(
     "Flood maps are scenario visualizations derived from real local street/building/waterway layers when available, "
     "combined with outlet-driven slope and literature-based NBS performance effects. "
-    "They are intended for comparative interpretation, not as calibrated hydraulic simulations."
+    "They are intended for comparative interpretation, not calibrated hydraulic prediction."
 )
