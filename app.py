@@ -663,150 +663,41 @@ with k4:
     result_card("Flood extent reduction", f"{flood_extent_reduction_pct:.1f}%", "Estimated spatial impact", "#34d399")
 
 left, right = st.columns([1.08, 1.0])
-# ============================================================
-# HYDROGRAPH + PERFORMANCE TABLE — CLEAN DASHBOARD STYLE
-# ============================================================
 
-st.markdown(
-    """
-    <div style="font-size:0.78rem; font-weight:800; letter-spacing:0.08em; color:#94a3b8; margin-bottom:0.5rem;">
-        🔵 OUTLET HYDROGRAPH
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+with left:
+    st.subheader("Hydrograph: Before vs After")
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.plot(t, Q_base, "--", lw=2.4, label="Baseline")
+    ax.plot(t_mod, Q_mod, lw=2.6, label="With selected NBS")
+    ax.set_xlabel("Time (hours)")
+    ax.set_ylabel("Discharge (m³/s)")
+    ax.set_title("Outlet response")
+    ax.grid(alpha=0.25)
+    ax.legend()
+    st.pyplot(fig, use_container_width=True)
 
-fig, ax = plt.subplots(figsize=(9.5, 4.7))
+    st.subheader("Performance by Selected Solution")
+    if not details_df.empty:
+        show_df = details_df.copy()
+        col_map = {
+            "solution": "Solution",
+            "family": "Family",
+            "coverage_pct": "Coverage (%)",
+            "runoff_reduction_pct": "Runoff red. (%)",
+            "peak_reduction_pct": "Peak red. (%)",
+            "lag_add_hr": "Lag (h)",
+        }
 
-ax.plot(t, Q_base, color="#2E86DE", lw=2.6, label="Baseline")
-ax.plot(t_mod, Q_mod, color="#4C8C2B", lw=2.6, label="With NBS")
+        for col in ["runoff_reduction_pct", "peak_reduction_pct"]:
+            if col in show_df.columns:
+                show_df[col] = show_df[col].round(1)
 
-# Shaded avoided discharge area
-min_len = min(len(t), len(t_mod), len(Q_base), len(Q_mod))
-ax.fill_between(
-    t[:min_len],
-    Q_mod[:min_len],
-    Q_base[:min_len],
-    where=Q_base[:min_len] >= Q_mod[:min_len],
-    color="#F4B183",
-    alpha=0.22,
-)
+        if "lag_add_hr" in show_df.columns:
+            show_df["lag_add_hr"] = show_df["lag_add_hr"].round(2)
 
-# Peak annotations
-base_peak_idx = np.argmax(Q_base)
-mod_peak_idx = np.argmax(Q_mod)
+        keep_cols = [c for c in col_map if c in show_df.columns]
+        st.dataframe(show_df[keep_cols].rename(columns=col_map), use_container_width=True, hide_index=True)
 
-ax.scatter(t[base_peak_idx], Q_base[base_peak_idx], color="#2E86DE", s=28, zorder=5)
-ax.text(
-    t[base_peak_idx] + 1,
-    Q_base[base_peak_idx],
-    f"{Q_base[base_peak_idx]:.0f}",
-    color="#2E86DE",
-    fontsize=11,
-    fontweight="bold",
-)
-
-ax.scatter(t_mod[mod_peak_idx], Q_mod[mod_peak_idx], color="#4C8C2B", s=28, zorder=5)
-ax.text(
-    t_mod[mod_peak_idx] + 1,
-    Q_mod[mod_peak_idx],
-    f"{Q_mod[mod_peak_idx]:.0f}",
-    color="#4C8C2B",
-    fontsize=11,
-    fontweight="bold",
-)
-
-ax.set_xlabel("Time (hours)")
-ax.set_ylabel("Discharge (m³/s)")
-ax.grid(alpha=0.18)
-ax.legend(frameon=False, loc="upper right")
-ax.spines["top"].set_visible(False)
-ax.spines["right"].set_visible(False)
-
-st.pyplot(fig, use_container_width=True)
-
-
-# -----------------------------
-# Performance table with bars
-# -----------------------------
-st.markdown(
-    """
-    <div style="font-size:0.78rem; font-weight:800; letter-spacing:0.08em; color:#94a3b8; margin-top:1.4rem; margin-bottom:0.5rem;">
-        🟢 PERFORMANCE BY SOLUTION
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-def bar_cell(value, max_value=25, color="#ff4b5c"):
-    width = min(100, max(2, (float(value) / max_value) * 100))
-    return f"""
-    <div style="display:flex; align-items:center; gap:8px;">
-        <div style="width:120px; height:7px; background:rgba(255,255,255,0.12); border-radius:10px; overflow:hidden;">
-            <div style="width:{width:.1f}%; height:100%; background:{color}; border-radius:10px;"></div>
-        </div>
-        <span style="font-size:0.85rem; font-weight:700;">{float(value):.1f}%</span>
-    </div>
-    """
-
-if not details_df.empty:
-    show_df = details_df.copy()
-
-    # Harmonize possible column names from hydro_model.py
-    if "solution" not in show_df.columns and "name" in show_df.columns:
-        show_df["solution"] = show_df["name"]
-
-    if "runoff_reduction_pct" not in show_df.columns and "runoff_red_pct" in show_df.columns:
-        show_df["runoff_reduction_pct"] = show_df["runoff_red_pct"]
-
-    if "peak_reduction_pct" not in show_df.columns and "peak_red_pct" in show_df.columns:
-        show_df["peak_reduction_pct"] = show_df["peak_red_pct"]
-
-    if "lag_add_hr" not in show_df.columns and "lag_hr" in show_df.columns:
-        show_df["lag_add_hr"] = show_df["lag_hr"]
-
-    html = """
-    <table style="width:100%; border-collapse:collapse; background:rgba(15,23,42,0.85); border-radius:12px; overflow:hidden;">
-        <thead>
-            <tr style="background:rgba(255,255,255,0.06); color:#d1d5db;">
-                <th style="padding:10px; text-align:left;">Solution</th>
-                <th style="padding:10px; text-align:left;">Type</th>
-                <th style="padding:10px; text-align:right;">Coverage</th>
-                <th style="padding:10px; text-align:left;">Runoff ↓</th>
-                <th style="padding:10px; text-align:left;">Peak ↓</th>
-                <th style="padding:10px; text-align:right;">Lag (h)</th>
-            </tr>
-        </thead>
-        <tbody>
-    """
-
-    for _, r in show_df.iterrows():
-        solution = r.get("solution", "N/A")
-        family = r.get("family", "N/A")
-        coverage = float(r.get("coverage_pct", 0))
-        runoff = float(r.get("runoff_reduction_pct", 0))
-        peak = float(r.get("peak_reduction_pct", 0))
-        lag = float(r.get("lag_add_hr", 0))
-
-        html += f"""
-        <tr style="border-top:1px solid rgba(255,255,255,0.08); color:#f8fafc;">
-            <td style="padding:10px; font-weight:700;">{solution}</td>
-            <td style="padding:10px;">{family}</td>
-            <td style="padding:10px; text-align:right; font-weight:700;">{coverage:.0f}</td>
-            <td style="padding:10px;">{bar_cell(runoff, max_value=25)}</td>
-            <td style="padding:10px;">{bar_cell(peak, max_value=30)}</td>
-            <td style="padding:10px; text-align:right; font-weight:700;">{lag:.2f}</td>
-        </tr>
-        """
-
-    html += """
-        </tbody>
-    </table>
-    """
-
-    st.markdown(html, unsafe_allow_html=True)
-
-    
 with right:
     st.subheader("NBS Spatial Allocation")
     category_map = np.full(mask.shape, np.nan)
